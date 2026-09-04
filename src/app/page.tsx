@@ -37,8 +37,6 @@ import { toShape, queryRing, type DrawMode, type DrawnShape, type DrawProgress, 
 import { selectInPolygon } from '@/lib/aoi';
 import { diffSweep, appendEvents, type WatchBaseline, type WatchEvent } from '@/lib/watch';
 import { STORAGE_KEY, serializeShapes, deserializeShapes, shapesToGeoJSON, downloadFile } from '@/lib/aoi-export';
-import VisionModePicker, { VisionFilterDefs, useVisionMode } from '@/components/VisionModes';
-import type { VisionModeId } from '@/lib/vision-modes';
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -263,10 +261,6 @@ export default function Dashboard() {
   const [drawnPolygons, setDrawnPolygons] = useState<DrawnShape[]>([]);
   const [demoMode, setDemoMode] = useState(false);
   const [osirisTheme, setOsirisTheme] = useState<'core'|'ghost'>('core');
-  /* False-colour pass over the rendered map — see lib/vision-modes. */
-  const [visionMode, setVisionMode] = useState<VisionModeId>('none');
-  // Applies the active mode's filter to the map container.
-  useVisionMode(visionMode);
 
 
   useEffect(() => {
@@ -1244,15 +1238,25 @@ export default function Dashboard() {
           <ViewSegment layoutId="view-style" active={mapStyle === 'satellite'} onClick={() => setMapStyle('satellite')} title="Satellite View" icon={Satellite} label="SAT" />
         </div>
 
-        {/* Sensor-look modes. Sits with the other map-appearance controls
-            because that is what it is — a false-colour pass, not a data layer. */}
+        {/* Area assessment for wherever the map is looking.
+            The dossier already existed but was bound to right-click only, so
+            nothing on screen said it was there. */}
         {!isMobile && (
-          <div className="pointer-events-auto mt-1.5 p-2 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-panel)] backdrop-blur-2xl max-w-[280px]">
-            {/* The filter definitions the active mode's url(#…) resolves to. */}
-            <VisionFilterDefs />
-            <VisionModePicker mode={visionMode} onChange={setVisionMode} />
-          </div>
+          <button
+            onClick={() => mapCenter && handleRightClick({ lat: mapCenter.lat, lng: mapCenter.lng })}
+            disabled={!mapCenter || dossierLoading}
+            title="Intelligence dossier for the centre of the current view — country, population, languages, leadership and background. Right-clicking anywhere on the map does the same for that point."
+            className="pointer-events-auto mt-1.5 w-full px-3 py-2 rounded-xl border text-[10px] font-mono font-bold tracking-[0.15em] backdrop-blur-2xl transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+            style={{
+              color: 'var(--gold-primary)',
+              background: 'var(--bg-panel)',
+              borderColor: 'color-mix(in srgb, var(--gold-primary) 40%, transparent)',
+            }}
+          >
+            {dossierLoading ? 'ASSESSING…' : 'ASSESS THIS AREA'}
+          </button>
         )}
+
 
         {/* Scale Bar */}
         {!isMobile && (

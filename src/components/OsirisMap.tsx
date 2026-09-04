@@ -9,6 +9,7 @@ import {
 } from '@/lib/tile-proxy';
 import { thermalLayer, thermalTileUrl, gibsDate, THERMAL_ATTRIBUTION } from '@/lib/thermal-imagery';
 import { AircraftTracker } from '@/lib/aircraft-motion';
+import { setLabelsForImagery } from '@/lib/map-labels';
 import { createSatelliteLayer, parseColor, type SatPoint } from '@/lib/satellite-layer';
 import { MAP_DEFAULTS, MAP_PALETTE_KEYS, readMapPalette, satColorFor, type MapPalette } from '@/lib/map-palette';
 import { STYLE_EVENT } from '@/lib/style-tokens';
@@ -2486,10 +2487,12 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         } else {
           map.setLayoutProperty('satellite-layer', 'visibility', 'visible');
         }
+        setLabelsForImagery(map, true);
       } else {
         if (map.getLayer('satellite-layer')) {
           map.setLayoutProperty('satellite-layer', 'visibility', 'none');
         }
+        setLabelsForImagery(map, false);
       }
     } catch (e) {
       console.warn('Style switch failed:', e);
