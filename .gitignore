@@ -56,3 +56,9 @@ scanner_backend_backup.js
 
 # Security - Prevent accidental manual leaks
 *Manual*.md
+
+# OASIS VISION launcher runtime - never commit these.
+# .appwindow is the app window's Chrome profile: cookies, cache, history.
+launcher/.appwindow/
+launcher/logs/
+launcher/*.ico

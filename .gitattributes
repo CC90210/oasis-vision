@@ -1,0 +1,27 @@
+# Shell scripts MUST keep LF endings. Checked out with CRLF on Windows and then
+# run on macOS, bash fails with "bad interpreter: /usr/bin/env bash^M" — which
+# is how a cross-platform repo silently stops working on the other platform.
+*.sh            text eol=lf
+launcher/*.sh   text eol=lf
+
+# Batch and PowerShell are the mirror case: cmd.exe wants CRLF.
+*.cmd           text eol=crlf
+*.bat           text eol=crlf
+*.ps1           text eol=crlf
+
+# Normalise source so a Windows clone and a macOS clone agree.
+*.ts            text
+*.tsx           text
+*.js            text
+*.mjs           text
+*.json          text
+*.md            text
+*.css           text
+
+# Binary — never touch.
+*.png           binary
+*.jpg           binary
+*.ico           binary
+*.icns          binary
+*.svg           text
+*.pbf           binary
