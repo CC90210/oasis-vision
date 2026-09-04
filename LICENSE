@@ -1,6 +1,15 @@
 MIT License
 
+Copyright (c) 2026 OASIS AI
 Copyright (c) 2026 simplifaisoul
+
+This project is OASIS VISION, maintained by OASIS AI. It began as a fork of
+simplifaisoul/osiris and retains that project's copyright notice because the
+MIT licence requires it: the notice below must be included in all copies or
+substantial portions of the Software, and that obligation does not lapse when
+the code is modified, rebranded, or kept in a private repository. Both notices
+stand together — OASIS AI holds copyright in its own contributions, and the
+original author holds copyright in theirs.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,7 +1,14 @@
 {
-  "name": "osiris",
-  "version": "0.1.0",
+  "name": "oasis-vision",
+  "version": "1.0.0",
   "private": true,
+  "description": "OASIS VISION — global intelligence and reconnaissance console by OASIS AI. Local-first: live aircraft, cameras, seismic, weather, space, cyber, conflict and markets on one GPU-rendered globe.",
+  "license": "MIT",
+  "author": "OASIS AI",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CC90210/oasis-vision.git"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

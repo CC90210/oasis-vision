@@ -1,23 +1,56 @@
-# Security Policy
+# Security Policy — OASIS VISION
 
-## Responsible Usage
-The OSIRIS Project provides powerful Open Source Intelligence (OSINT) and cybersecurity monitoring tools designed to visualize and analyze global threat landscapes. 
+OASIS VISION is a private intelligence and reconnaissance console maintained by
+OASIS AI. It runs locally and is not a public service.
 
-**By using this software, you agree to the following:**
-1. **Defensive Use Only:** The tools, scripts, and intelligence capabilities provided in this repository must be used strictly for defensive, educational, and authorized monitoring purposes.
-2. **Authorized Targets:** Do not use OSIRIS to scan, probe, or interact with infrastructure, networks, or systems that you do not own or have explicit authorization to monitor.
-3. **Compliance with Laws:** You are responsible for ensuring that your use of OSIRIS complies with all applicable local, state, national, and international laws and regulations.
-4. **No Malicious Intent:** Any use of OSIRIS for malicious activities, offensive cyber operations, or unauthorized data harvesting is strictly prohibited.
+## Deployment posture
 
-The creators and contributors of OSIRIS are not responsible for any misuse or damage caused by this software. Use it responsibly and ethically.
+The server binds to `127.0.0.1` by default. That is deliberate: the dashboard
+proxies arbitrary external URLs and ships a reconnaissance toolkit, so it should
+not be reachable from a network unless someone asks for it.
 
-## Reporting a Vulnerability
+- `--lan` / `OASIS-VISION-mobile.cmd` exposes it on the local network. Plain
+  HTTP, no authentication — use it on a trusted network only.
+- Reaching it from elsewhere should go through Tailscale (private to your own
+  devices, real HTTPS) rather than a public tunnel. A public tunnel puts the
+  recon toolkit and everything the console can query in front of anyone holding
+  the URL.
+- No credentials are required to run it. Optional API keys, where used, are read
+  from the environment and never committed.
 
-We take the security of our project seriously. If you discover a security vulnerability within the OSIRIS codebase itself, please do not disclose it publicly.
+## Responsible use
 
-**To report a vulnerability:**
-1. Please open an issue in the GitHub repository and label it appropriately, or contact the repository maintainers directly if a private channel is available.
-2. Provide a detailed description of the vulnerability, including steps to reproduce it and the potential impact.
-3. Our team will acknowledge the receipt of your report and provide an estimated timeline for resolution.
+The RECON toolkit's passive tools — DNS, WHOIS, certificate transparency, IP
+intelligence, breach exposure, sanctions and chain lookups — query public
+registries and are unrestricted.
 
-We appreciate your efforts in keeping OSIRIS secure for everyone!
+Active scanning is a different matter and is disabled by default (`/api/scanner`
+returns 503 unless a separate scanner backend is configured).
+
+**Port scanning and vulnerability scanning against infrastructure you do not own
+or have written authorisation to test is a criminal offence** in Canada under
+s.342.1 of the Criminal Code, and under comparable statutes elsewhere. Point
+active tooling only at your own assets, or at systems whose owner has given you
+written permission.
+
+The same applies to the camera layers. They aggregate publicly published feeds
+from transport authorities and webcam operators. Use them for situational
+awareness, not for surveilling identifiable individuals.
+
+## Data handling
+
+- Everything runs on the local machine; no telemetry is sent to OASIS AI.
+- Upstream's analytics and funding surfaces were removed in this fork.
+- The launcher's browser profile (`launcher/.appwindow/`) holds cookies and
+  cache for the app window and is gitignored. Do not commit it.
+
+## Reporting
+
+This is a private repository. Raise anything you find directly with the
+maintainer rather than opening a public issue.
+
+## Attribution
+
+OASIS VISION began as a fork of [simplifaisoul/osiris](https://github.com/simplifaisoul/osiris)
+(MIT). See [LICENSE](LICENSE) — the original copyright notice is retained as
+that licence requires.
