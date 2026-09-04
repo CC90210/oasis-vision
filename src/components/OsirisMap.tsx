@@ -105,8 +105,18 @@ const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, navigating = false, aircraftAirports = {} }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  /** Survives re-render: aircraft history would otherwise reset on every poll. */
-  const trackerRef = useRef(new AircraftTracker());
+  /**
+   * One tracker per flight category, surviving re-render — aircraft history
+   * would otherwise reset on every poll. Separate trackers rather than one
+   * shared: the categories render as different layers with different icons,
+   * and an aircraft that changes category should not drag its trail across.
+   */
+  const trackersRef = useRef({
+    flights: new AircraftTracker(),
+    'private-fl': new AircraftTracker(),
+    jets: new AircraftTracker(),
+    military: new AircraftTracker(),
+  });
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const [mapReady, setMapReady] = useState(false);
   /**
@@ -1557,27 +1567,6 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     ids.forEach(id => { if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none'); });
   }, []);
 
-  // Flight data → GeoJSON (GPU rendered)
-  useEffect(() => {
-    if (!mapReady) return;
-    const toFeatures = (arr: any[], decimate: number = 1) => {
-      let filtered = arr || [];
-      if (decimate > 1) {
-        filtered = filtered.filter((_, i) => i % decimate === 0);
-      }
-      return filtered.map((f: any) => ({
-        type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: [f.lng, f.lat] },
-        properties: { callsign: f.callsign, heading: f.heading || 0, alt: f.alt, model: f.model, speed_knots: f.speed_knots, registration: f.registration, icao24: f.icao24 },
-      }));
-    };
-    /* Commercial traffic is animated rather than snapped — see the tracker
-       effect below. The old decimation also dropped nine aircraft in ten; the
-       tracker carries the full set, and these are GPU symbols that handle it. */
-    if (!activeLayers.flights) setGeo('flights', []);
-    setGeo('private-fl', activeLayers.private ? toFeatures(data.private_flights, 2) : []);
-    setGeo('jets', activeLayers.jets ? toFeatures(data.private_jets, 2) : []);
-    setGeo('military', activeLayers.military ? toFeatures(data.military_flights) : []);
-  }, [mapReady, data.commercial_flights, data.private_flights, data.private_jets, data.military_flights, activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military]);
 
   /**
    * Pull the palette out of the document whenever it can have changed.
@@ -2288,30 +2277,52 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    const tracker = trackerRef.current;
-    if (!activeLayers.flights) {
-      tracker.clear();
-      setGeo('flights', []);
-      setGeo('fl-trails', []);
-      return;
-    }
+    const trackers = trackersRef.current;
+    const categories = [
+      { src: 'flights' as const, data: data.commercial_flights, on: activeLayers.flights },
+      { src: 'private-fl' as const, data: data.private_flights, on: activeLayers.private },
+      { src: 'jets' as const, data: data.private_jets, on: activeLayers.jets },
+      { src: 'military' as const, data: data.military_flights, on: activeLayers.military },
+    ];
 
-    tracker.update((data.commercial_flights || []) as any[], Date.now());
+    const now = Date.now();
+    for (const c of categories) {
+      if (!c.on) {
+        trackers[c.src].clear();
+        setGeo(c.src, []);
+      } else {
+        trackers[c.src].update((c.data || []) as any[], now);
+      }
+    }
 
     let last = performance.now();
     const iv = setInterval(() => {
-      const now = performance.now();
+      const t = performance.now();
       // Clamp: a backgrounded tab resumes with a huge delta and would snap
       // every aircraft across the map in one frame.
-      const dt = Math.min((now - last) / 1000, 1);
-      last = now;
-      tracker.step(Date.now(), dt);
-      setGeo('flights', tracker.points());
-      setGeo('fl-trails', tracker.trails());
+      const dt = Math.min((t - last) / 1000, 1);
+      last = t;
+      const stamp = Date.now();
+
+      // Trails from every visible category share one source, so they are
+      // gathered rather than each overwriting the last.
+      const trails: GeoJSON.Feature[] = [];
+      for (const c of categories) {
+        if (!c.on) continue;
+        const tracker = trackers[c.src];
+        tracker.step(stamp, dt);
+        setGeo(c.src, tracker.points());
+        trails.push(...tracker.trails());
+      }
+      setGeo('fl-trails', trails);
     }, 100);
 
     return () => clearInterval(iv);
-  }, [mapReady, data.commercial_flights, activeLayers.flights, setGeo]);
+  }, [
+    mapReady, setGeo,
+    data.commercial_flights, data.private_flights, data.private_jets, data.military_flights,
+    activeLayers.flights, activeLayers.private, activeLayers.jets, activeLayers.military,
+  ]);
 
   // Dynamic projection switching (lightweight — no terrain DEM)
   useEffect(() => {
