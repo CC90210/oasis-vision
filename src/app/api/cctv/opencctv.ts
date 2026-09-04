@@ -38,16 +38,68 @@ const BATCH_SIZE = 50;
  * pay for Japan. Each sub-region carries its own ceiling on cameras
  * materialised, which is what keeps this to tens of round trips, not 600.
  */
-interface Bounds { minLat: number; maxLat: number; minLng: number; maxLng: number }
+interface Box { minLat: number; maxLat: number; minLng: number; maxLng: number }
+
+/**
+ * A region box, optionally minus a rectangle.
+ *
+ * The index is US-dominated — 67,422 of its 144,942 cameras sit in North
+ * America — so any rectangle drawn over Latin America also covers Florida, the
+ * Gulf coast and southern Texas, and sample() strides across the combined list.
+ * Latin America came back 85% US cameras. Shrinking the rectangle far enough to
+ * fix that would cut Mexico off, so the box carries a hole instead.
+ */
+interface Bounds extends Box { exclude?: Box }
+
+function inBox(lat: number, lng: number, b: Box): boolean {
+  return lat > b.minLat && lat < b.maxLat && lng > b.minLng && lng < b.maxLng;
+}
 
 const REGIONS: Record<string, { bounds: Bounds; cap: number }> = {
-  /* China, Japan, the Koreas and Taiwan — ~24,000 candidates. */
+  /* China, Japan, the Koreas and Taiwan — 24,188 candidates. */
   eastasia: { bounds: { minLat: 18, maxLat: 46, minLng: 73.5, maxLng: 146 }, cap: 1200 },
-  /* Indochina, Indonesia, the Philippines — ~7,700 candidates. */
+  /* Indochina, Indonesia, the Philippines — 7,781 candidates. */
   seasia: { bounds: { minLat: -11, maxLat: 24, minLng: 92, maxLng: 130 }, cap: 800 },
-  /* The Gulf, Iran, Central Asia and the subcontinent — ~950 between them, so
+  /* The Gulf, Iran, Central Asia and the subcontinent — 1,379 candidates, so
      the cap is never the binding constraint here; it is a guard, not a quota. */
   westasia: { bounds: { minLat: 5, maxLat: 56, minLng: 25, maxLng: 92 }, cap: 600 },
+
+  /* ── The rest of the world ──
+   *
+   * The index holds 144,942 cameras and only the three Asian boxes above were
+   * ever queried, so 138,107 candidates were never looked at — which is why
+   * Russia, Mongolia and Africa rendered as blank map. Counts below are
+   * measured against the live index, not estimated.
+   *
+   * Caps stay in the same band as the existing regions on purpose: BATCH_SIZE
+   * is 50, so a cap of 1,600 is 32 parallel round trips, comparable to
+   * eastasia's 24. These are viewport-scoped — a region is only fetched when
+   * the map is actually over it — so the ceiling bounds one region's cost, not
+   * the planet's.
+   */
+  /* 42,411 candidates — the densest region in the index after North America. */
+  europe: { bounds: { minLat: 35, maxLat: 72, minLng: -25, maxLng: 40 }, cap: 1600 },
+  /* 67,422 candidates. Overlaps the state DOT sources, which are different
+     providers with namespaced ids, so the two sets complement rather than
+     duplicate. */
+  northam: { bounds: { minLat: 24, maxLat: 72, minLng: -170, maxLng: -52 }, cap: 1600 },
+  /* 14,984 candidates across Mexico, Central and South America. */
+  latam: {
+    bounds: {
+      minLat: -56, maxLat: 30, minLng: -118, maxLng: -34,
+      /* Texas, the Gulf coast and Florida. Mexico lies west and south of this
+         hole so it survives; northam already covers what is cut out. */
+      exclude: { minLat: 24.3, maxLat: 30, minLng: -106, maxLng: -79 },
+    },
+    cap: 1200,
+  },
+  /* 7,871 candidates across Russia, Belarus, the Caucasus and Mongolia. */
+  russia: { bounds: { minLat: 41, maxLat: 78, minLng: 19, maxLng: 180 }, cap: 1200 },
+  /* 3,727 candidates across Australia, New Zealand and the Pacific. */
+  oceania: { bounds: { minLat: -50, maxLat: 0, minLng: 110, maxLng: 180 }, cap: 800 },
+  /* 1,692 candidates — the thinnest region in the index, and the cap never
+     binds. Sparse coverage here is the source's, not ours. */
+  africa: { bounds: { minLat: -35, maxLat: 37.4, minLng: -18, maxLng: 52 }, cap: 800 },
 };
 
 /** The index, as three parallel arrays. */
@@ -178,10 +230,9 @@ function loader(region: string, bounds: Bounds, cap: number) {
     for (let i = 0; i < ids.length; i++) {
       const lat = lats[i];
       const lng = lngs[i];
-      if (lat > bounds.minLat && lat < bounds.maxLat &&
-          lng > bounds.minLng && lng < bounds.maxLng) {
-        inRegion.push(ids[i]);
-      }
+      if (!inBox(lat, lng, bounds)) continue;
+      if (bounds.exclude && inBox(lat, lng, bounds.exclude)) continue;
+      inRegion.push(ids[i]);
     }
 
     const wanted = sample(inRegion, cap);
@@ -209,3 +260,10 @@ function loader(region: string, bounds: Bounds, cap: number) {
 export const fetchEastAsiaCameras = cachedSource('eastasia', loader('East Asia', REGIONS.eastasia.bounds, REGIONS.eastasia.cap));
 export const fetchSeAsiaCameras = cachedSource('seasia', loader('Southeast Asia', REGIONS.seasia.bounds, REGIONS.seasia.cap));
 export const fetchWestAsiaCameras = cachedSource('westasia', loader('West & Central Asia', REGIONS.westasia.bounds, REGIONS.westasia.cap));
+
+export const fetchOpenEuropeCameras = cachedSource('oc-europe', loader('Europe', REGIONS.europe.bounds, REGIONS.europe.cap));
+export const fetchOpenNorthAmericaCameras = cachedSource('oc-northam', loader('North America', REGIONS.northam.bounds, REGIONS.northam.cap));
+export const fetchOpenLatamCameras = cachedSource('oc-latam', loader('Latin America', REGIONS.latam.bounds, REGIONS.latam.cap));
+export const fetchOpenRussiaCameras = cachedSource('oc-russia', loader('Russia & Mongolia', REGIONS.russia.bounds, REGIONS.russia.cap));
+export const fetchOpenOceaniaCameras = cachedSource('oc-oceania', loader('Oceania', REGIONS.oceania.bounds, REGIONS.oceania.cap));
+export const fetchOpenAfricaCameras = cachedSource('oc-africa', loader('Africa', REGIONS.africa.bounds, REGIONS.africa.cap));

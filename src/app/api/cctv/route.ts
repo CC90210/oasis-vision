@@ -35,7 +35,11 @@ import { fetchMichiganCameras } from './michigan';
 import { fetchIndianaCameras } from './indiana';
 import { fetchNevadaCameras } from './nevada';
 import { fetchLouisianaCameras } from './louisiana';
-import { fetchEastAsiaCameras, fetchSeAsiaCameras, fetchWestAsiaCameras } from './opencctv';
+import {
+  fetchEastAsiaCameras, fetchSeAsiaCameras, fetchWestAsiaCameras,
+  fetchOpenEuropeCameras, fetchOpenNorthAmericaCameras, fetchOpenLatamCameras,
+  fetchOpenRussiaCameras, fetchOpenOceaniaCameras, fetchOpenAfricaCameras,
+} from './opencctv';
 import {
   fetchLatamLiveCameras,
   fetchAfricaLiveCameras,
@@ -465,6 +469,14 @@ const RAW_REGION_FETCHERS: Record<string, RegionFetcher> = {
   'eastasia': fetchEastAsiaCameras,
   'seasia': fetchSeAsiaCameras,
   'westasia': fetchWestAsiaCameras,
+  // The rest of the OpenCCTV index — 138,107 candidates that no region
+  // fetcher previously reached.
+  'oc-europe': fetchOpenEuropeCameras,
+  'oc-northam': fetchOpenNorthAmericaCameras,
+  'oc-latam': fetchOpenLatamCameras,
+  'oc-russia': fetchOpenRussiaCameras,
+  'oc-oceania': fetchOpenOceaniaCameras,
+  'oc-africa': fetchOpenAfricaCameras,
   'latam-live': fetchLatamLiveCameras,
   'africa-live': fetchAfricaLiveCameras,
   'europe-live': fetchEuropeLiveCameras,
@@ -605,6 +617,14 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
   if (lat > 18 && lat < 46 && lng > 73.5 && lng < 146) regions.push('eastasia');
   if (lat > -11 && lat < 24 && lng > 92 && lng < 130) regions.push('seasia');
   if (lat > 5 && lat < 56 && lng > 25 && lng < 92) regions.push('westasia');
+  // OpenCCTV world coverage. Bounds mirror REGIONS in opencctv.ts; overlaps
+  // with the national sources are fine because ids are namespaced per source.
+  if (lat > 35 && lat < 72 && lng > -25 && lng < 40) regions.push('oc-europe');
+  if (lat > 24 && lat < 72 && lng > -170 && lng < -52) regions.push('oc-northam');
+  if (lat > -56 && lat < 30 && lng > -118 && lng < -34) regions.push('oc-latam');
+  if (lat > 41 && lat < 78 && lng > 19 && lng < 180) regions.push('oc-russia');
+  if (lat > -50 && lat < 0 && lng > 110 && lng < 180) regions.push('oc-oceania');
+  if (lat > -35 && lat < 37.4 && lng > -18 && lng < 52) regions.push('oc-africa');
   // Australia explicitly
   if (lat > -45 && lat < -10 && lng > 110 && lng < 155) regions.push('asia');
   // New Zealand (NZTA)
