@@ -156,20 +156,43 @@ async function fetchCanadaCameras(): Promise<any[]> {
     }
   } catch (e) { /* silent */ }
 
-  // Ville de Montréal municipal cameras
+  // Ville de Montréal municipal cameras.
+  //
+  // KNOWN DEAD as of 2026-09-04: this file returns HTTP 403, and the city's
+  // open-data portal no longer publishes a live camera index at all — a CKAN
+  // search for "caméra" returns only annotated ML-training archives. So there
+  // is currently no municipal Montréal feed to point at; the area is covered by
+  // Quebec 511 above (676 cameras, ~255 within the Montréal region).
+  //
+  // Kept, rather than deleted, because the city has republished this feed
+  // before. The failure is logged instead of swallowed so it does not go
+  // another year looking like a city with no cameras.
   try {
     const res = await stealthFetch('https://ville.montreal.qc.ca/circulation/sites/ville.montreal.qc.ca.circulation/files/cameras.json', { signal: AbortSignal.timeout(8000) });
-    if (res.ok) {
+    if (!res.ok) {
+      console.warn(`[OASIS] Ville de Montréal cameras — HTTP ${res.status}; falling back to Quebec 511 for the island`);
+    } else {
       const data = await res.json();
+      let added = 0;
       for (const cam of (data || [])) {
+        const lat = cam.latitude ?? cam.lat;
+        const lng = cam.longitude ?? cam.lng;
+        const url = cam.url || cam.imageUrl || '';
+        // The old loop pushed rows with undefined coords and empty urls, which
+        // become invisible pins that still inflate the camera count.
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || !url) continue;
         cams.push({
-          id: `mtl-muni-${cams.length}`, lat: cam.latitude || cam.lat, lng: cam.longitude || cam.lng,
+          id: `mtl-muni-${cams.length}`, lat, lng,
           name: cam.description || cam.name || 'Montréal Camera', city: 'Montréal', country: 'Canada',
-          feed_url: cam.url || cam.imageUrl || '', source: 'Ville MTL',
+          feed_url: url, source: 'Ville MTL',
         });
+        added++;
       }
+      console.log(`[OASIS] Ville de Montréal cameras: ${added}`);
     }
-  } catch (e) { /* silent */ }
+  } catch (e) {
+    console.warn('[OASIS] Ville de Montréal cameras — fetch failed:', e instanceof Error ? e.message : e);
+  }
 
   // Curated Toronto cameras (fallback if 511ON fails)
   const curated = [

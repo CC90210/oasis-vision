@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  OSIRIS — API Catalog
+ *  OASIS VISION — API Catalog
  *  Machine-readable description of every public route under /api.
  *  Kept in sync by hand with src/app/api/ * /route.ts
  * ═══════════════════════════════════════════════════════════════
@@ -503,7 +503,7 @@ export const API_GROUPS: ApiGroup[] = [
       {
         path: '/api/scanner',
         method: 'GET',
-        summary: 'Runs a scan against a target via the OSIRIS scanner backend.',
+        summary: 'Runs a scan against a target via the OASIS VISION scanner backend.',
         params: [
           {
             name: 'type',
