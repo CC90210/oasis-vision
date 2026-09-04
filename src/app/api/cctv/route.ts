@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
 import { cachedSource, peekSource } from '@/lib/sourceCache';
 import { fetchCaltransCameras } from './caltrans';
+import { fetchOntarioCameras } from './ontario';
 
 export const maxDuration = 60;
 import { fetchAsfinagCameras } from './asfinag';
@@ -140,21 +141,6 @@ async function fetchCanadaCameras(): Promise<any[]> {
     }
   } catch (e) { /* silent */ }
 
-  // Ontario 511 (MTO Highway Cameras)
-  try {
-    const res = await stealthFetch('https://511on.ca/api/v2/get/cameras', { signal: AbortSignal.timeout(10000) });
-    if (res.ok) {
-      const data = await res.json();
-      for (const cam of (data || [])) {
-        if (!cam.latitude || !cam.longitude) continue;
-        cams.push({
-          id: `on-${cam.id || cams.length}`, lat: cam.latitude, lng: cam.longitude,
-          name: cam.description || cam.name || 'Ontario Camera', city: 'Ontario', country: 'Canada',
-          feed_url: cam.imageUrl || cam.url || '', source: '511 Ontario',
-        });
-      }
-    }
-  } catch (e) { /* silent */ }
 
   // Ville de Montréal municipal cameras.
   //
@@ -193,14 +179,6 @@ async function fetchCanadaCameras(): Promise<any[]> {
   } catch (e) {
     console.warn('[OASIS] Ville de Montréal cameras — fetch failed:', e instanceof Error ? e.message : e);
   }
-
-  // Curated Toronto cameras (fallback if 511ON fails)
-  const curated = [
-    { id: 'tor-1', lat: 43.6532, lng: -79.3832, name: 'Yonge / Dundas Square', city: 'Toronto', country: 'Canada', feed_url: 'https://511on.ca/api/v2/get/cameras', source: '511 Ontario' },
-    { id: 'tor-2', lat: 43.6426, lng: -79.3871, name: 'CN Tower / Lakeshore', city: 'Toronto', country: 'Canada', feed_url: 'https://511on.ca/api/v2/get/cameras', source: '511 Ontario' },
-    { id: 'tor-3', lat: 43.6711, lng: -79.3868, name: 'Bloor / Yonge', city: 'Toronto', country: 'Canada', feed_url: 'https://511on.ca/api/v2/get/cameras', source: '511 Ontario' },
-  ];
-  cams.push(...curated);
 
   // Alberta 511
   try {
@@ -446,7 +424,13 @@ const RAW_REGION_FETCHERS: Record<string, RegionFetcher> = {
   'us-west': async () => { const [w, c] = await Promise.all([fetchWSDOTCameras(), fetchCaltransCameras()]); return [...w, ...c]; },
   'us-east': fetchUSEastCameras,
   'us-central': fetchUSCentralCameras,
-  'canada': fetchCanadaCameras,
+  // Ontario 511 is its own module rather than another inline block: it was the
+  // inline one, reading `latitude` off a `Latitude` API, that silently dropped
+  // all 940 provincial sites.
+  'canada': async () => {
+    const [rest, on] = await Promise.all([fetchCanadaCameras(), fetchOntarioCameras()]);
+    return [...rest, ...on];
+  },
   'europe': fetchEuropeCameras,
   'asia': fetchAsiaCameras,
   'bulgaria': fetchBulgariaCameras,
