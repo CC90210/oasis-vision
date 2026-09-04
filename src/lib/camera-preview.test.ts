@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { previewMedia, refreshInterval, VIDEO_KINDS, type PreviewKind } from './camera-preview';
+import { preloadFrame, previewMedia, refreshInterval, VIDEO_KINDS, type PreviewKind } from './camera-preview';
 
 describe('previewMedia', () => {
   it('treats a missing stream_type as a snapshot, like the full viewer', () => {
@@ -69,5 +69,75 @@ describe('VIDEO_KINDS', () => {
   it('is exactly the kinds that need a video element', () => {
     const kinds: PreviewKind[] = ['jpg', 'mjpeg', 'mp4', 'hls'];
     expect(kinds.filter(k => VIDEO_KINDS.has(k))).toEqual(['mp4', 'hls']);
+  });
+});
+
+/**
+ * Snapshot tiles used to assign straight to `src`, which blanks the element
+ * until the new bytes decode — the flash on every refresh. preloadFrame is what
+ * moves the fetch off-screen, so both the viewer and the map tiles can swap in
+ * one composited frame.
+ */
+describe('preloadFrame', () => {
+  /** Minimal stand-in for the browser's Image, recording what was set on it. */
+  class FakeImage {
+    static last: FakeImage | null = null;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    crossOrigin: string | null = null;
+    decodeCalls = 0;
+    private _src = '';
+    constructor() { FakeImage.last = this; }
+    get src() { return this._src; }
+    set src(v: string) { this._src = v; }
+    decode() { this.decodeCalls++; return Promise.resolve(); }
+  }
+
+  const withFakeImage = async (fn: () => Promise<unknown>) => {
+    const g = globalThis as Record<string, unknown>;
+    const had = 'Image' in g;
+    const prev = g.Image;
+    g.Image = FakeImage as unknown;
+    try { return await fn(); } finally { if (had) g.Image = prev; else delete g.Image; }
+  };
+
+  it('resolves with the url once the frame has loaded and decoded', async () => {
+    await withFakeImage(async () => {
+      const p = preloadFrame('https://cam/x.jpg?_t=1');
+      FakeImage.last!.onload!();
+      await expect(p).resolves.toBe('https://cam/x.jpg?_t=1');
+      expect(FakeImage.last!.decodeCalls).toBe(1);
+    });
+  });
+
+  it('rejects when the frame fails, so the caller can keep the last good one', async () => {
+    await withFakeImage(async () => {
+      const p = preloadFrame('https://cam/dead.jpg');
+      FakeImage.last!.onerror!();
+      await expect(p).rejects.toThrow(/failed to load/);
+    });
+  });
+
+  // Regression: setting crossOrigin puts the request in CORS mode, so every
+  // camera origin that does not send Access-Control-Allow-Origin would fail to
+  // preload and the tile would silently stop advancing. Nothing reads the
+  // pixels back, so it must stay unset.
+  it('never sets crossOrigin', async () => {
+    await withFakeImage(async () => {
+      const p = preloadFrame('https://cam/x.jpg');
+      expect(FakeImage.last!.crossOrigin).toBeNull();
+      FakeImage.last!.onload!();
+      await p;
+    });
+  });
+
+  it('resolves without a DOM, so server rendering does not throw', async () => {
+    const g = globalThis as Record<string, unknown>;
+    const had = 'Image' in g;
+    const prev = g.Image;
+    if (had) delete g.Image;
+    try {
+      await expect(preloadFrame('https://cam/x.jpg')).resolves.toBe('https://cam/x.jpg');
+    } finally { if (had) g.Image = prev; }
   });
 });

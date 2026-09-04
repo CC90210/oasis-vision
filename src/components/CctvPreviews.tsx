@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Maximize2 } from 'lucide-react';
-import { freshen, previewMedia, refreshInterval, VIDEO_KINDS, type PreviewKind } from '@/lib/camera-preview';
+import { freshen, preloadFrame, previewMedia, refreshInterval, VIDEO_KINDS, type PreviewKind } from '@/lib/camera-preview';
 import { layoutTile, tileHeight, tilesOverlap, type TileGeometry } from '@/lib/map-tile-layout';
 import type { Map as MlMap } from 'maplibre-gl';
 
@@ -81,15 +81,23 @@ function ImageMedia({ cam: camera, onReady, onFail }: MediaProps) {
   useEffect(() => {
     if (!every) return;
     /* Staggered, so eight tiles do not all hit their origin on the same tick. */
-    let interval: ReturnType<typeof setInterval> | undefined;
-    const first = setTimeout(() => {
-      setSrc(freshen(url));
-      interval = setInterval(() => setSrc(freshen(url)), every);
-    }, every + Math.random() * 2000);
-    return () => {
-      clearTimeout(first);
-      if (interval) clearInterval(interval);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    /* Decode before swapping: assigning straight to `src` blanks the tile until
+       the new bytes land, which is the flash these previews used to show on
+       every tick. Rescheduling from completion also stops a slow origin from
+       stacking overlapping requests. */
+    const tick = () => {
+      const next = freshen(url);
+      preloadFrame(next)
+        .then(() => { if (!cancelled) setSrc(next); })
+        .catch(() => {/* keep the last good frame rather than blanking */})
+        .finally(() => { if (!cancelled) timer = setTimeout(tick, every); });
     };
+
+    timer = setTimeout(tick, every + Math.random() * 2000);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [url, every]);
 
   return (

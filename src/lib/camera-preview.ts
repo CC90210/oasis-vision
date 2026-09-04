@@ -61,6 +61,37 @@ export function freshen(url: string): string {
 }
 
 /**
+ * Fetch and decode a frame off-screen, resolving with the same URL once it is
+ * ready to paint.
+ *
+ * Pointing a visible `<img>` straight at the next URL is what makes snapshot
+ * cameras flash: the element discards the frame it is showing the moment `src`
+ * changes, then holds empty until the new bytes arrive and decode. Awaiting
+ * this first turns the swap into a single composited frame.
+ *
+ * Deliberately no `crossOrigin`: nothing here reads the pixels back, and
+ * setting it would put the request in CORS mode, so every camera origin that
+ * does not send `Access-Control-Allow-Origin` would fail to preload and the
+ * tile would never advance.
+ */
+export function preloadFrame(url: string): Promise<string> {
+  // No DOM under SSR or in the node test environment — nothing to preload.
+  if (typeof Image === 'undefined') return Promise.resolve(url);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const done = () => resolve(url);
+    img.onload = () => {
+      // decode() resolves when the bitmap is ready to paint; without it the
+      // first paint after the swap can still stall. Not in every browser.
+      if (typeof img.decode === 'function') img.decode().then(done, done);
+      else done();
+    };
+    img.onerror = () => reject(new Error(`frame failed to load: ${url}`));
+    img.src = url;
+  });
+}
+
+/**
  * How often a tile should re-request, in ms — or 0 for the kinds that keep
  * themselves current.
  *

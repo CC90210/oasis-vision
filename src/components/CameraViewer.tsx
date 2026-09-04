@@ -5,20 +5,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, ExternalLink, RefreshCw, MapPin, Camera, CameraOff, Maximize2, PlayCircle } from 'lucide-react';
 import Hls from 'hls.js';
 import { isHostedOffPlatform, liveFeedAtSource, localEmbed, needsResolution, offPlatformView } from '@/lib/camera-feed';
+import { freshen, preloadFrame } from '@/lib/camera-preview';
 
 interface CameraViewerProps {
   camera: any | null;
   onClose: () => void;
   onLocate?: (lat: number, lng: number) => void;
-}
-
-/**
- * A cache-busted URL for a clip source. These endpoints return "the most recent
- * clip" for a fixed URL, so without a unique parameter the browser serves the
- * copy it already has and the footage never advances.
- */
-function freshClipUrl(base: string): string {
-  return `${base}${base.includes('?') ? '&' : '?'}_t=${Date.now()}`;
 }
 
 export default function CameraViewer({ camera, onClose, onLocate }: CameraViewerProps) {
@@ -161,8 +153,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
     // JPG fallback
     const targetUrl = camera.feed_url || camera.stream_url;
     if (targetUrl) {
-      const url = targetUrl.includes('?') ? `${targetUrl}&_t=${Date.now()}` : `${targetUrl}?_t=${Date.now()}`;
-      setImageUrl(url);
+      setImageUrl(freshen(targetUrl));
     } else {
       setError(true);
       setLoading(false);
@@ -189,29 +180,13 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
     let timer: ReturnType<typeof setTimeout>;
 
     const tick = () => {
-      const url = targetUrl.includes('?') ? `${targetUrl}&_t=${Date.now()}` : `${targetUrl}?_t=${Date.now()}`;
-      const pre = new Image();
-      pre.crossOrigin = 'anonymous';
-      const commit = () => {
-        if (cancelled) return;
-        setImageUrl(url);
-        setLoading(false);
+      const url = freshen(targetUrl);
+      preloadFrame(url)
+        .then(() => { if (!cancelled) { setImageUrl(url); setLoading(false); } })
+        .catch(() => {/* keep the last good frame rather than blanking */})
         // Schedule from completion, not on a fixed interval: a slow upstream
         // would otherwise stack overlapping in-flight loads.
-        timer = setTimeout(tick, 5000);
-      };
-      pre.onload = () => {
-        // decode() resolves once the bitmap is ready to paint; without it the
-        // first paint after the swap can still stall. Older browsers lack it.
-        if (typeof pre.decode === 'function') pre.decode().then(commit, commit);
-        else commit();
-      };
-      pre.onerror = () => {
-        if (cancelled) return;
-        // Keep showing the last good frame and try again rather than blanking.
-        timer = setTimeout(tick, 5000);
-      };
-      pre.src = url;
+        .finally(() => { if (!cancelled) timer = setTimeout(tick, 5000); });
     };
 
     timer = setTimeout(tick, 5000);
@@ -221,7 +196,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
   // Seed the first clip whenever an mp4 camera opens.
   useEffect(() => {
     if (streamType !== 'mp4' || !camera?.stream_url) return;
-    setClipA(freshClipUrl(camera.stream_url));
+    setClipA(freshen(camera.stream_url));
     setClipB(null);
     setActiveSlot('a');
   }, [camera, streamType]);
@@ -418,7 +393,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                         setLoading(false);
                         // Start buffering the successor now, while there is still
                         // a clip playing to cover the download.
-                        const next = freshClipUrl(camera.stream_url);
+                        const next = freshen(camera.stream_url);
                         if (slot === 'a') setClipB(next); else setClipA(next);
                       }}
                       onEnded={() => {
