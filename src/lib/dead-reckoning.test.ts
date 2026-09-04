@@ -135,3 +135,32 @@ describe('knotsToMps', () => {
     expect(knotsToMps(470)).toBeCloseTo(241.8, 0);
   });
 });
+
+describe('distanceM', () => {
+  /**
+   * The antimeridian case, which is why this helper exists rather than a plain
+   * haversine: it measures longitude with shortestLngDelta. A naive
+   * `(b.lng - a.lng)` returns most of the planet's circumference for two points
+   * a few kilometres apart, and OASIS VISION has cameras either side of the
+   * 180th meridian.
+   */
+  it('measures across the antimeridian the short way', () => {
+    const d = distanceM({ lat: -16.5, lng: 179.9 }, { lat: -16.5, lng: -179.9 });
+    expect(d).toBeLessThan(25_000);
+    expect(d).toBeGreaterThan(20_000);
+  });
+
+  it('is symmetric, and zero for a point against itself', () => {
+    const a = { lat: 45.5137, lng: -73.5324 };
+    const b = { lat: 40.758, lng: -73.9855 };
+    expect(distanceM(a, a)).toBe(0);
+    expect(distanceM(a, b)).toBeCloseTo(distanceM(b, a), 6);
+  });
+
+  it('agrees with a known great-circle distance', () => {
+    // Montreal to New York is about 534 km.
+    const d = distanceM({ lat: 45.5019, lng: -73.5674 }, { lat: 40.7128, lng: -74.006 });
+    expect(d).toBeGreaterThan(525_000);
+    expect(d).toBeLessThan(545_000);
+  });
+});

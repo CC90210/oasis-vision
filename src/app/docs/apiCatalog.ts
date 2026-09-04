@@ -211,12 +211,50 @@ export const API_GROUPS: ApiGroup[] = [
       {
         path: '/api/region-dossier',
         method: 'GET',
-        summary: 'Composite intelligence summary for a map location — the panel behind a map right-click.',
+        summary:
+          'Area assessment for a coordinate — what is on the ground there, not what country it is in. '
+          + 'Reverse-geocodes to street and postcode, then reports emergency, power, transport, government '
+          + 'and military sites within the radius, observed conditions, and the Wikipedia articles recorded '
+          + 'at that point. Behind the ASSESS THIS AREA button and a map right-click.',
         params: [
-          { name: 'lat', required: true, desc: 'Latitude of the region.', example: '48.3794' },
-          { name: 'lng', required: true, desc: 'Longitude of the region.', example: '31.1656' },
+          { name: 'lat', required: true, desc: 'Latitude to assess.', example: '45.5137' },
+          { name: 'lng', required: true, desc: 'Longitude to assess.', example: '-73.5324' },
+          { name: 'radius', required: false, desc: 'Metres around the point that "here" means. 200–5000, default 1200.', example: '1200' },
         ],
-        returns: ['coordinates', '…dossier sections'],
+        returns: [
+          'coordinates', 'radius', 'place', 'conditions', 'infrastructure', 'nearby',
+          'wikipedia', 'country', 'degraded', 'timestamp',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'voice',
+    title: 'Voice',
+    blurb:
+      'Spoken read-out of an area assessment. The ElevenLabs key stays on the server — these routes '
+      + 'proxy it, so it is never delivered to a browser. Billing is per character, not per request.',
+    endpoints: [
+      {
+        path: '/api/voice',
+        method: 'GET',
+        summary:
+          'Voices available for a briefing, and the characters left in the month. The picker is built from '
+          + 'this rather than a hardcoded list, so it cannot offer a voice the synthesis route would reject.',
+        returns: ['configured', 'voices', 'quota'],
+      },
+      {
+        path: '/api/voice/speak',
+        method: 'POST',
+        summary:
+          'Synthesises speech and returns audio/mpeg. Body: { text, voiceId? }. Rejects text over 2500 '
+          + 'characters with 413 and reports the upstream reason verbatim — usually a spent quota — rather '
+          + 'than a generic failure.',
+        params: [
+          { name: 'text', required: true, desc: 'What to say. Max 2500 characters.', example: 'Assessment for Espace 67…' },
+          { name: 'voiceId', required: false, desc: 'A voice id from /api/voice. Falls back to the default briefing voice.', example: 'Xb7hH8MSUJpSbSDYk0k2' },
+        ],
+        returns: ['audio/mpeg body', 'X-Characters-Billed header'],
       },
     ],
   },

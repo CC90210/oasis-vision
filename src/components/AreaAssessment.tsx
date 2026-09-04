@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Volume2, Square, X, Loader2, AlertTriangle } from 'lucide-react';
 import { buildAreaBrief, type BriefInput } from '@/lib/area-brief';
+// lib/dead-reckoning's version, not a local one: it measures longitude with
+// shortestLngDelta, so a camera at 179.9E and a point at 179.9W come out 22 km
+// apart instead of most of the way round the planet. This map has cameras in
+// New Zealand and the Russian Far East, so that edge is reachable.
+import { distanceM } from '@/lib/dead-reckoning';
 
 /**
  * OASIS VISION — the area assessment panel, and the voice that reads it.
@@ -48,15 +53,6 @@ interface Props {
   aircraft?: { lat: number; lng: number }[];
   /** Fly the map to a facility the assessment found. */
   onFocus?: (lat: number, lng: number) => void;
-}
-
-/** Great-circle distance in metres — the map is global, so flat maths will not do. */
-function distanceM(aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const R = 6371000, rad = Math.PI / 180;
-  const dLat = (bLat - aLat) * rad, dLng = (bLng - aLng) * rad;
-  const s = Math.sin(dLat / 2) ** 2 +
-    Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -115,9 +111,10 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
   const coverage = useMemo(() => {
     if (!data) return { camerasNearby: 0, aircraftOverhead: 0 };
     const { lat, lng } = data.coordinates;
+    const here = { lat, lng };
     const inRange = (list: { lat: number; lng: number }[] | undefined, m: number) =>
       (list || []).filter((p) =>
-        Number.isFinite(p?.lat) && Number.isFinite(p?.lng) && distanceM(lat, lng, p.lat, p.lng) <= m,
+        Number.isFinite(p?.lat) && Number.isFinite(p?.lng) && distanceM(here, p) <= m,
       ).length;
     // Aircraft get a wider ring: "overhead" is not a street-level idea.
     return { camerasNearby: inRange(cameras, radius * 5), aircraftOverhead: inRange(aircraft, 25000) };
