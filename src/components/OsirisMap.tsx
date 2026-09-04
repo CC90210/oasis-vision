@@ -8,6 +8,7 @@ import {
   AWS_TERRAIN_TEMPLATE, AWS_TERRAIN_ENCODING, AWS_TERRAIN_ATTRIBUTION,
 } from '@/lib/tile-proxy';
 import { thermalLayer, thermalTileUrl, gibsDate, THERMAL_ATTRIBUTION } from '@/lib/thermal-imagery';
+import { AircraftTracker } from '@/lib/aircraft-motion';
 import { createSatelliteLayer, parseColor, type SatPoint } from '@/lib/satellite-layer';
 import { MAP_DEFAULTS, MAP_PALETTE_KEYS, readMapPalette, satColorFor, type MapPalette } from '@/lib/map-palette';
 import { STYLE_EVENT } from '@/lib/style-tokens';
@@ -104,6 +105,8 @@ const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, navigating = false, aircraftAirports = {} }: OsirisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  /** Survives re-render: aircraft history would otherwise reset on every poll. */
+  const trackerRef = useRef(new AircraftTracker());
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const [mapReady, setMapReady] = useState(false);
   /**
@@ -309,7 +312,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       createDot(map, 'dot-fire', isGhost ? phantomPurple : '#E65100', 10);
       createDot(map, 'dot-cctv', cameraColor, 10);
 
-      const sources = ['flights','military','jets','private-fl','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-arcs', 'cyber-heads', 'cyber-impacts', 'gdelt-events', 'cf-outages', 'cf-attacks'];
+      const sources = ['flights','military','jets','private-fl','fl-trails','satellites','earthquakes','gdelt','day-night','cctv','fires','weather','infrastructure','maritime','maritime-choke','maritime-ships','live-news','conflict-zones', 'war-alerts-targets', 'war-alerts-lines', 'balloons', 'radiation', 'ip-sweep-devices', 'ip-sweep-pulse', 'ip-sweep-connections', 'scan-targets', 'sdk-entities', 'sdk-links', 'malware-nodes', 'malware-new', 'network-mesh', 'cyber-arcs', 'cyber-heads', 'cyber-impacts', 'gdelt-events', 'cf-outages', 'cf-attacks'];
       sources.forEach(s => map.addSource(s, { type: 'geojson', data: EMPTY_FC }));
 
       // ── FLIGHT ROUTE VISUALIZATION SOURCES & LAYERS ──
@@ -675,6 +678,16 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         'text-field': ['get', 'id'], 'text-size': 11, 'text-font': ['Open Sans Bold'],
         'text-offset': [0, 2], 'text-max-width': 14, 'text-allow-overlap': false,
       }, paint: { 'text-color': '#D32F2F', 'text-halo-color': '#000', 'text-halo-width': 1.5, 'text-opacity': 0.9 }});
+
+      /* Flight trails, under the icons. A short tail is what makes a heading
+         readable at a glance and shows the aircraft is actually moving. */
+      map.addLayer({ id: 'fl-trail-lines', type: 'line', source: 'fl-trails',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': '#00E5FF',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.6, 8, 1.4],
+          'line-opacity': 0.45,
+        }});
 
       // Flight layers (WebGL symbol — GPU rendered, handles 50K+ smooth)
       const flightLayers = [
@@ -1557,7 +1570,10 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         properties: { callsign: f.callsign, heading: f.heading || 0, alt: f.alt, model: f.model, speed_knots: f.speed_knots, registration: f.registration, icao24: f.icao24 },
       }));
     };
-    setGeo('flights', activeLayers.flights ? toFeatures(data.commercial_flights, 10) : []);
+    /* Commercial traffic is animated rather than snapped — see the tracker
+       effect below. The old decimation also dropped nine aircraft in ten; the
+       tracker carries the full set, and these are GPU symbols that handle it. */
+    if (!activeLayers.flights) setGeo('flights', []);
     setGeo('private-fl', activeLayers.private ? toFeatures(data.private_flights, 2) : []);
     setGeo('jets', activeLayers.jets ? toFeatures(data.private_jets, 2) : []);
     setGeo('military', activeLayers.military ? toFeatures(data.military_flights) : []);
@@ -2254,6 +2270,48 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       console.warn('[OASIS] thermal IR toggle error:', e);
     }
   }, [mapReady, activeLayers.thermal_ir]);
+
+  /**
+   * Live aircraft motion.
+   *
+   * The feed lands every 30s or so. Drawing it directly is why aircraft sat
+   * still and then jumped — the map was only ever showing the last packet. The
+   * tracker holds each aircraft's last fix and interpolates a position for the
+   * current instant, so the layer redraws far faster than the feed updates,
+   * with a short trail behind each contact.
+   *
+   * A 100ms timer rather than requestAnimationFrame: 10fps is smooth for
+   * something moving at map scale, and it keeps a few thousand GeoJSON features
+   * off the 60fps budget the rest of the map needs.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    const tracker = trackerRef.current;
+    if (!activeLayers.flights) {
+      tracker.clear();
+      setGeo('flights', []);
+      setGeo('fl-trails', []);
+      return;
+    }
+
+    tracker.update((data.commercial_flights || []) as any[], Date.now());
+
+    let last = performance.now();
+    const iv = setInterval(() => {
+      const now = performance.now();
+      // Clamp: a backgrounded tab resumes with a huge delta and would snap
+      // every aircraft across the map in one frame.
+      const dt = Math.min((now - last) / 1000, 1);
+      last = now;
+      tracker.step(Date.now(), dt);
+      setGeo('flights', tracker.points());
+      setGeo('fl-trails', tracker.trails());
+    }, 100);
+
+    return () => clearInterval(iv);
+  }, [mapReady, data.commercial_flights, activeLayers.flights, setGeo]);
 
   // Dynamic projection switching (lightweight — no terrain DEM)
   useEffect(() => {
