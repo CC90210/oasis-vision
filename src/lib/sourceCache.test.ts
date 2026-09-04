@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { cachedSource, clearSourceCache } from './sourceCache';
+import { cachedSource, clearSourceCache, peekSource } from './sourceCache';
 
 type Cam = { id: string };
 const cam = (id: string): Cam => ({ id });
@@ -75,5 +75,40 @@ describe('cachedSource', () => {
     const b = cachedSource<Cam>('t7b', async () => [cam('b')]);
     expect(await a()).toEqual([cam('a')]);
     expect(await b()).toEqual([cam('b')]);
+  });
+});
+
+/**
+ * The CCTV route gives each region a 12s budget and, when it lapses, serves
+ * whatever peekSource still holds. Canada aggregates three highway authorities
+ * and reliably overruns that budget on a cold refresh, so a peek taken during
+ * an in-flight refresh returning [] would blink its 2,505 cameras off the map
+ * at every TTL boundary — the bug these tests exist to hold shut.
+ */
+describe('peekSource', () => {
+  it('returns empty for a key that was never fetched', () => {
+    expect(peekSource<Cam>('unfetched-key')).toEqual([]);
+  });
+
+  it('still holds the previous cameras while a slow refresh is in flight', async () => {
+    let release!: () => void;
+    let calls = 0;
+    const load = cachedSource<Cam>('t8', async () => {
+      calls++;
+      if (calls === 1) return [cam('first')];
+      // The second call models the refresh that overruns the caller's budget.
+      await new Promise<void>((r) => { release = r; });
+      return [cam('second')];
+    }, 10);
+
+    expect(await load()).toEqual([cam('first')]);
+    await new Promise((r) => setTimeout(r, 25));   // let the TTL lapse
+
+    const slow = load();                            // refresh starts, does not settle
+    expect(peekSource<Cam>('t8')).toEqual([cam('first')]);
+
+    release();
+    expect(await slow).toEqual([cam('second')]);
+    expect(peekSource<Cam>('t8')).toEqual([cam('second')]);
   });
 });
