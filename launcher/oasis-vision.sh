@@ -87,7 +87,13 @@ if [ "$BIND" = "0.0.0.0" ]; then
   LAN_IP="$( (ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}') || true)"
   echo ""
   if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
-    TS_HOST="$(tailscale status --json 2>/dev/null | sed -n 's/.*"DNSName": *"\([^"]*\)\.".*/\1/p' | head -1 || true)"
+    # Parsed with node, not sed. `tailscale status --json` is a single line
+    # listing every peer, so a greedy regex for "DNSName" returns the LAST
+    # peer's hostname rather than this machine's — it printed another device's
+    # address and would have sent the phone to the wrong node. node is
+    # guaranteed here: it is what serves the app.
+    TS_HOST="$(tailscale status --json 2>/dev/null \
+      | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);if(j.BackendState==="Running"&&j.Self&&j.Self.DNSName)process.stdout.write(j.Self.DNSName.replace(/\.$/,""))}catch(e){}})' 2>/dev/null || true)"
     if [ -n "$TS_HOST" ]; then
       echo "  BEST - from anywhere over Tailscale (HTTPS, private to your devices):"
       echo "    https://$TS_HOST     (run once: tailscale serve --bg $PORT)"
