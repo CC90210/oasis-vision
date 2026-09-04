@@ -37,6 +37,8 @@ import { toShape, queryRing, type DrawMode, type DrawnShape, type DrawProgress, 
 import { selectInPolygon } from '@/lib/aoi';
 import { diffSweep, appendEvents, type WatchBaseline, type WatchEvent } from '@/lib/watch';
 import { STORAGE_KEY, serializeShapes, deserializeShapes, shapesToGeoJSON, downloadFile } from '@/lib/aoi-export';
+import VisionModePicker, { VisionFilterDefs, useVisionMode } from '@/components/VisionModes';
+import type { VisionModeId } from '@/lib/vision-modes';
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -60,6 +62,7 @@ const UptimeClock = () => {
   const [uptime, setUptime] = useState('00:00:00');
   const startTime = useRef(0);
   if (startTime.current === 0) startTime.current = Date.now();
+
   useEffect(() => {
     const iv = setInterval(() => {
       const e = Math.floor((Date.now() - startTime.current) / 1000);
@@ -260,6 +263,11 @@ export default function Dashboard() {
   const [drawnPolygons, setDrawnPolygons] = useState<DrawnShape[]>([]);
   const [demoMode, setDemoMode] = useState(false);
   const [osirisTheme, setOsirisTheme] = useState<'core'|'ghost'>('core');
+  /* False-colour pass over the rendered map — see lib/vision-modes. */
+  const [visionMode, setVisionMode] = useState<VisionModeId>('none');
+  // Applies the active mode's filter to the map container.
+  useVisionMode(visionMode);
+
 
   useEffect(() => {
     document.body.className = osirisTheme === 'core' ? '' : `theme-${osirisTheme}`;
@@ -1234,6 +1242,16 @@ export default function Dashboard() {
           <ViewSegment layoutId="view-style" active={mapStyle === 'dark'} onClick={() => setMapStyle('dark')} title="Night Mode" icon={Moon} label="MAP" />
           <ViewSegment layoutId="view-style" active={mapStyle === 'satellite'} onClick={() => setMapStyle('satellite')} title="Satellite View" icon={Satellite} label="SAT" />
         </div>
+
+        {/* Sensor-look modes. Sits with the other map-appearance controls
+            because that is what it is — a false-colour pass, not a data layer. */}
+        {!isMobile && (
+          <div className="pointer-events-auto mt-1.5 p-2 rounded-xl border border-[var(--border-primary)] bg-[var(--bg-panel)] backdrop-blur-2xl max-w-[280px]">
+            {/* The filter definitions the active mode's url(#…) resolves to. */}
+            <VisionFilterDefs />
+            <VisionModePicker mode={visionMode} onChange={setVisionMode} />
+          </div>
+        )}
 
         {/* Scale Bar */}
         {!isMobile && (
