@@ -32,6 +32,17 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
   // soon as the visible one begins playing, and they trade places on `ended`.
   // By then the incoming clip is already buffered, so the handoff costs no
   // visible frame.
+  /**
+   * A stream that was advertised but cannot play.
+   *
+   * 35% of the Caltrans cameras badged "live HLS" answer 404 — the district
+   * index lists cameras the media edge has dropped. Treating that as a viewer
+   * error left the operator staring at a spinner on one click in three, while a
+   * perfectly good snapshot sat unused in feed_url. Setting this switches the
+   * render to the still and relabels the badge, so a dead stream costs a
+   * picture rather than the whole camera.
+   */
+  const [streamFailed, setStreamFailed] = useState(false);
   const [clipA, setClipA] = useState<string | null>(null);
   const [clipB, setClipB] = useState<string | null>(null);
   const [activeSlot, setActiveSlot] = useState<'a' | 'b'>('a');
@@ -95,10 +106,17 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
     return () => { live = false; };
   }, [resolveKey]);
 
-  const streamType = resolvedEmbed ? 'iframe' : (camera?.stream_type || 'jpg');
+  const declaredType = resolvedEmbed ? 'iframe' : (camera?.stream_type || 'jpg');
+  /* A dead stream with a snapshot behind it renders as the snapshot. */
+  const streamType = streamFailed && (camera?.feed_url || camera?.stream_url) ? 'jpg' : declaredType;
   const streamUrl: string | undefined = resolvedEmbed || camera?.stream_url;
   const view = offPlatformView({ hostedOffPlatform, resolving, resolvedEmbed, offline });
   const externalOnly = view !== 'inline';
+
+  /* Keyed on the camera alone. Putting this in the effect below would loop:
+     that effect depends on streamType, and streamType is derived from
+     streamFailed. */
+  useEffect(() => { setStreamFailed(false); }, [camera]);
 
   useEffect(() => {
     if (!camera) return;
@@ -128,7 +146,11 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
           videoRef.current?.play().catch(() => {});
         });
         hls.on(Hls.Events.ERROR, (event, data) => {
-          if (data.fatal) setError(true);
+          if (!data.fatal) return;
+          // Prefer the snapshot the source also publishes; only a camera
+          // with nothing else to show is a genuine error.
+          if (camera.feed_url || camera.stream_url) setStreamFailed(true);
+          else setError(true);
         });
       } else if (videoRef.current?.canPlayType('application/vnd.apple.mpegurl')) {
         videoRef.current.src = camera.stream_url;
@@ -434,7 +456,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
               <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/80 border border-[var(--gold-primary)]/50 px-2 py-1 shadow-[0_0_10px_rgba(0,0,0,0.8)]">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]" />
                 <span className="text-[9px] font-mono text-white tracking-[0.2em]">
-                  {watchLiveUrl ? 'SNAPSHOT' : streamType === 'mp4' ? 'RECENT CLIP' : streamType === 'jpg' ? 'LIVE SAT-LINK' : 'LIVE FEED'}
+                  {streamFailed ? 'SNAPSHOT · STREAM OFFLINE' : watchLiveUrl ? 'SNAPSHOT' : streamType === 'mp4' ? 'RECENT CLIP' : streamType === 'jpg' ? 'LIVE SAT-LINK' : 'LIVE FEED'}
                 </span>
               </div>
             )}
@@ -476,7 +498,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                   <span className="text-[9px] text-[var(--text-muted)] font-mono tracking-widest">STATUS</span>
                   {/* Nothing is being received locally for an external feed — don't claim otherwise. */}
                   <span className={`text-[9px] font-mono tracking-widest ${externalOnly ? 'text-[var(--gold-primary)]' : 'text-[var(--alert-green)]'}`}>
-                    {view === 'offline' ? (gone ? 'REMOVED BY SOURCE' : 'OFF AIR AT SOURCE') : watchLiveUrl ? 'LIVE VIDEO AT SOURCE' : externalOnly ? 'HOSTED OFF-PLATFORM' : streamType === 'mp4' ? 'CLIP / AUTO-REFETCH' : 'ACTIVE / RECORDING'}
+                    {view === 'offline' ? (gone ? 'REMOVED BY SOURCE' : 'OFF AIR AT SOURCE') : streamFailed ? 'STREAM 404 AT SOURCE' : watchLiveUrl ? 'LIVE VIDEO AT SOURCE' : externalOnly ? 'HOSTED OFF-PLATFORM' : streamType === 'mp4' ? 'CLIP / AUTO-REFETCH' : 'ACTIVE / RECORDING'}
                   </span>
                 </div>
               </div>

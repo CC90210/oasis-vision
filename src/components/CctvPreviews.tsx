@@ -61,7 +61,9 @@ export interface PreviewCamera {
   stream_type?: string;
   external_url?: string;
   /** Resolved once during selection — see lib/camera-preview. */
-  media: { kind: PreviewKind; url: string };
+  /* fallbackUrl is the still a stream camera also publishes — what the tile
+     shows when the playlist is one of the ~35% that 404. */
+  media: { kind: PreviewKind; url: string; fallbackUrl?: string };
 }
 
 interface MediaProps {
@@ -201,9 +203,16 @@ function Tile({ cam: camera, onOpen }: { cam: PreviewCamera; onOpen: (cam: Previ
   const onReady = useCallback(() => setLoaded(true), []);
   const onFail = useCallback(() => setFailed(true), []);
 
-  /* A camera that will not load is worse than no tile: it is a broken box
+  /* A stream that fails but publishes a still is shown as the still rather than
+     removed. A third of the Caltrans playlists are dead while their snapshot
+     works, and dropping those tiles made the densest camera region on the map
+     look emptier than the sources it is built from. */
+  const fallback = camera.media.fallbackUrl;
+  const showFallback = failed && Boolean(fallback);
+
+  /* Only a camera with nothing left to show is worse than no tile: a broken box
      sitting over the map claiming to be a feed. */
-  if (failed) return null;
+  if (failed && !showFallback) return null;
 
   return (
     <button
@@ -221,9 +230,16 @@ function Tile({ cam: camera, onOpen }: { cam: PreviewCamera; onOpen: (cam: Previ
         }}
       >
         <div className="h-full w-full transition-opacity duration-500" style={{ opacity: loaded ? 1 : 0 }}>
-          {VIDEO_KINDS.has(camera.media.kind)
-            ? <VideoMedia cam={camera} onReady={onReady} onFail={onFail} />
-            : <ImageMedia cam={camera} onReady={onReady} onFail={onFail} />}
+          {showFallback
+            ? <ImageMedia
+                cam={{ ...camera, media: { kind: 'jpg', url: fallback as string } }}
+                onReady={onReady}
+                /* Nothing left to try: the stream is dead and so is the still. */
+                onFail={() => setLoaded(false)}
+              />
+            : VIDEO_KINDS.has(camera.media.kind)
+              ? <VideoMedia cam={camera} onReady={onReady} onFail={onFail} />
+              : <ImageMedia cam={camera} onReady={onReady} onFail={onFail} />}
         </div>
 
         {/* Two cosmetic passes over the picture: scanlines, for the same CRT

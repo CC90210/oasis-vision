@@ -29,14 +29,20 @@ export const VIDEO_KINDS: ReadonlySet<PreviewKind> = new Set<PreviewKind>(['mp4'
  * feature with a far worse frame budget) or the record has no usable URL for
  * the kind it claims to be.
  */
-export function previewMedia(cam: PreviewSource): { kind: PreviewKind; url: string } | null {
+export function previewMedia(cam: PreviewSource): { kind: PreviewKind; url: string; fallbackUrl?: string } | null {
   /* Absent stream_type means a snapshot feed, the same default the full viewer
      uses. */
   const declared = (cam.stream_type ?? 'jpg').toLowerCase();
 
   if (declared === 'mp4' || declared === 'hls') {
     const url = cam.stream_url?.trim();
-    return url ? { kind: declared, url } : null;
+    if (!url) return null;
+    /* 35% of the Caltrans playlists badged live answer 404 — the district index
+       lists cameras the media edge has dropped. Those cameras still publish a
+       working still, so the tile carries it and degrades to a picture instead
+       of removing itself from the map. */
+    const fallbackUrl = cam.feed_url?.trim();
+    return fallbackUrl ? { kind: declared, url, fallbackUrl } : { kind: declared, url };
   }
 
   if (declared === 'mjpeg') {
