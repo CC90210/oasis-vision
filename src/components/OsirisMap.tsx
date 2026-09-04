@@ -3,6 +3,10 @@ import { buildGeometry, closeRing, drawReducer, initialDrawState, measure, type 
 
 import { useEffect, useRef, useState, useCallback, memo } from 'react';
 import maplibregl from 'maplibre-gl';
+import {
+  proxiedTileUrl, proxiedTileTemplate, needsProxy,
+  AWS_TERRAIN_TEMPLATE, AWS_TERRAIN_ENCODING, AWS_TERRAIN_ATTRIBUTION,
+} from '@/lib/tile-proxy';
 import { createSatelliteLayer, parseColor, type SatPoint } from '@/lib/satellite-layer';
 import { MAP_DEFAULTS, MAP_PALETTE_KEYS, readMapPalette, satColorFor, type MapPalette } from '@/lib/map-palette';
 import { STYLE_EVENT } from '@/lib/style-tokens';
@@ -239,11 +243,9 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       attributionControl: false as const,
       maxPitch: 85,
       transformRequest: (url: string) => {
-        // Route all CARTO CDN requests through the internal Next.js proxy API
-        if (url.includes('cartocdn.com')) {
-          const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-          return { url: `${baseUrl}/api/proxy-tiles?url=${encodeURIComponent(url)}` };
-        }
+        // Both upstreams that refuse cross-origin reads go through the proxy.
+        // Same helper as the DEM source, so there is one way to build these.
+        if (needsProxy(url)) return { url: proxiedTileUrl(url) };
         return { url };
       },
     };
@@ -2251,25 +2253,15 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
          * Access-Control-Allow-Origin, so they come through the tile proxy.
          */
         if (!map.getSource('oasis-dem')) {
-          /* The {z}/{x}/{y} placeholders must survive into the final string:
-             MapLibre substitutes them by literal match, and encodeURIComponent
-             turns them into %7Bz%7D, which matches nothing — so the source
-             would sit there requesting no tiles at all and terrain would
-             silently do nothing. Encode the URL, then restore the braces. */
-          const demUrl =
-            '/api/proxy-tiles?url=' +
-            encodeURIComponent('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png')
-              .replace(/%7B/g, '{')
-              .replace(/%7D/g, '}');
           map.addSource('oasis-dem', {
             type: 'raster-dem',
-            tiles: [demUrl],
+            // proxiedTileTemplate keeps {z}/{x}/{y} literal; encoding them is
+            // what made this source request zero tiles the first time.
+            tiles: [proxiedTileTemplate(AWS_TERRAIN_TEMPLATE)],
             tileSize: 256,
-            // AWS publishes Terrarium encoding, not Mapbox's. Getting this
-            // wrong renders a plausible but entirely wrong landscape.
-            encoding: 'terrarium',
+            encoding: AWS_TERRAIN_ENCODING,
             maxzoom: 13,
-            attribution: 'Elevation: AWS Terrain Tiles · SRTM, GMTED, ETOPO1',
+            attribution: AWS_TERRAIN_ATTRIBUTION,
           });
         }
         if (!map.getTerrain()) {
