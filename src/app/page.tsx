@@ -14,6 +14,7 @@ import FlightWatchPanel, { type WatchedFlight, type FlightTelemetry, type Aircra
 import type { NavProgress } from '@/lib/navigation';
 import type { LiveDetection } from '@/lib/malware-intel';
 import ScaleBar from '@/components/ScaleBar';
+import AreaAssessment from '@/components/AreaAssessment';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { applySettings, loadSavedSettings } from '@/lib/style-tokens';
 import SharePanel from '@/components/SharePanel';
@@ -1245,7 +1246,15 @@ export default function Dashboard() {
           <button
             onClick={() => mapCenter && handleRightClick({ lat: mapCenter.lat, lng: mapCenter.lng })}
             disabled={!mapCenter || dossierLoading}
-            title="Intelligence dossier for the centre of the current view — country, population, languages, leadership and background. Right-clicking anywhere on the map does the same for that point."
+            /* A disabled control has to say why it is disabled. This one is
+               gated on the map having reported a centre, so when the basemap
+               fails to load it sits dead and unexplained — which reads as a
+               broken feature rather than a broken map. */
+            title={
+              !mapCenter
+                ? 'Waiting for the map to finish loading — the assessment needs a centre point.'
+                : 'Assess the centre of the current view: what is mapped on the ground, live conditions, and what is on record at that exact point — then have it read aloud. Right-clicking anywhere on the map assesses that point instead.'
+            }
             className="pointer-events-auto mt-1.5 w-full px-3 py-2 rounded-xl border text-[10px] font-mono font-bold tracking-[0.15em] backdrop-blur-2xl transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
             style={{
               color: 'var(--gold-primary)',
@@ -1748,37 +1757,26 @@ export default function Dashboard() {
 
       {/* Scale bar is now integrated into the map controls section above */}
 
-      {/* ── Region Dossier ── */}
+      {/* ── Area Assessment ── */}
       {(regionDossier || dossierLoading) && (
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="absolute top-16 md:top-20 left-2 right-2 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[300] md:w-[480px] max-h-[65vh] overflow-y-auto styled-scrollbar">
-          <div className="glass-panel p-5 osiris-glow">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-mono font-bold text-[var(--gold-primary)] tracking-wider">REGION DOSSIER</h2>
-              <button onClick={() => { setRegionDossier(null); setDossierLoading(false); }} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs">✕</button>
-            </div>
-            {dossierLoading ? (
-              <div className="text-center py-8">
-                <div className="w-5 h-5 border-2 border-[var(--gold-primary)] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                <span className="text-[9px] font-mono text-[var(--text-muted)] tracking-widest">COMPILING INTEL...</span>
-              </div>
-            ) : regionDossier && (
-              <div className="space-y-3">
-                <div><div className="hud-label mb-0.5">LOCATION</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.location?.display_name}</div></div>
-                {regionDossier.country && (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div><div className="hud-label mb-0.5">COUNTRY</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.flag} {regionDossier.country.name}</div></div>
-                    <div><div className="hud-label mb-0.5">CAPITAL</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.capital}</div></div>
-                    <div><div className="hud-label mb-0.5">POPULATION</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.population?.toLocaleString()}</div></div>
-                    <div><div className="hud-label mb-0.5">REGION</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.subregion || regionDossier.country.region}</div></div>
-                    <div><div className="hud-label mb-0.5">LANGUAGES</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.languages?.join(', ')}</div></div>
-                    <div><div className="hud-label mb-0.5">AREA</div><div className="text-xs text-[var(--text-primary)]">{regionDossier.country.area?.toLocaleString()} km²</div></div>
-                  </div>
-                )}
-                {regionDossier.head_of_state && (<div><div className="hud-label mb-0.5">HEAD OF STATE</div><div className="text-xs text-[var(--gold-primary)]">{regionDossier.head_of_state.name}</div><div className="text-[9px] text-[var(--text-muted)]">{regionDossier.head_of_state.position}</div></div>)}
-                {regionDossier.wikipedia && (<div><div className="hud-label mb-1">INTELLIGENCE BRIEF</div><div className="flex gap-3">{regionDossier.wikipedia.thumbnail && <img src={regionDossier.wikipedia.thumbnail} alt="" className="w-14 h-14 rounded object-cover flex-shrink-0" />}<p className="text-[9px] text-[var(--text-secondary)] leading-relaxed">{regionDossier.wikipedia.extract}</p></div></div>)}
-              </div>
-            )}
-          </div>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="absolute top-16 md:top-20 left-2 md:left-1/2 md:-translate-x-1/2 z-[300]"
+        >
+          <AreaAssessment
+            data={regionDossier}
+            loading={dossierLoading}
+            onClose={() => { setRegionDossier(null); setDossierLoading(false); }}
+            cameras={data.cameras}
+            aircraft={[
+              ...(data.commercial_flights || []),
+              ...(data.military_flights || []),
+              ...(data.private_flights || []),
+              ...(data.private_jets || []),
+            ]}
+            onFocus={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })}
+          />
         </motion.div>
       )}
 

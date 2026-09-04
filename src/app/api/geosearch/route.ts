@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { httpJson, optional } from '@/lib/httpJson';
 import { cachedSource } from '@/lib/sourceCache';
+import { queryLadder } from '@/lib/geo-query';
 
 export const maxDuration = 20;
 
@@ -174,11 +175,20 @@ export async function GET(request: Request) {
     const results = await cachedSource<GeoResult>(
       key,
       async () => {
-        const [photon, nominatim] = await Promise.all([
-          optional(searchPhoton(q, lat, lng)),
-          optional(searchNominatim(q)),
-        ]);
-        return mergeResults(photon || [], nominatim || []);
+        // Both providers, then the reduction fallback only if that found
+        // nothing. See lib/geo-query.ts: an address typed with English street
+        // words returns zero from BOTH engines when OSM holds the street in
+        // French, and the two tokens the operator added to be more precise are
+        // exactly what empty the result set.
+        for (const attempt of queryLadder(q)) {
+          const [photon, nominatim] = await Promise.all([
+            optional(searchPhoton(attempt, lat, lng)),
+            optional(searchNominatim(attempt)),
+          ]);
+          const merged = mergeResults(photon || [], nominatim || []);
+          if (merged.length) return merged;
+        }
+        return [];
       },
       10 * 60 * 1000,
     )();

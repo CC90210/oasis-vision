@@ -35,16 +35,23 @@ describe('setLabelsForImagery', () => {
   });
 
   /**
-   * Restoring must hand back undefined, not a hardcoded colour. MapLibre reads
-   * undefined as "use the loaded style's value"; baking in an original would
-   * freeze the dark theme and fight the Style Studio, which repaints these same
-   * properties.
+   * Restoring must clear the override rather than set a hardcoded "original",
+   * which would freeze the dark theme and fight the Style Studio.
+   *
+   * And it must clear it with null specifically. MapLibre documents
+   * "Pass `null` to unset the existing value"; undefined happens to work in the
+   * current implementation but is not the contract, so relying on it would
+   * break silently on an upgrade and leave the labels bright over the dark
+   * style. This asserts the documented value, not the one that happens to work.
    */
-  it('restores by clearing the override, not by setting a colour', () => {
+  it('restores by unsetting with null, as MapLibre documents', () => {
     const { map, calls } = fakeMap();
     setLabelsForImagery(map, false);
     expect(calls.length).toBeGreaterThan(0);
-    for (const c of calls) expect(c.value, `${c.id}.${c.prop}`).toBeUndefined();
+    for (const c of calls) {
+      expect(c.value, `${c.id}.${c.prop}`).toBeNull();
+      expect(c.value, `${c.id}.${c.prop} must not be undefined`).not.toBeUndefined();
+    }
   });
 
   it('touches every label class in both directions', () => {

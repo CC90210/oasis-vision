@@ -32,16 +32,48 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden domain' }, { status: 403 });
     }
 
-    const response = await fetch(targetUrl.toString(), { signal: AbortSignal.timeout(15000),
-      headers: {
-        'Accept': '*/*',
-        'User-Agent': 'Osiris-Tile-Proxy/1.0',
-      },
-      // Using Next.js fetch cache options to heavily cache tiles locally
-      next: {
-        revalidate: 31536000, // Cache for 1 year
+    /**
+     * Retried, and this is not optional politeness.
+     *
+     * Everything the map draws comes through here, including the ONE request
+     * the whole application depends on: the basemap style.json. MapLibre does
+     * not retry a failed style — a single transient error leaves the map blank
+     * forever, `mapReady` never fires, and every control gated on it (the area
+     * assessment button among them) stays disabled with nothing on screen
+     * explaining why. Observed exactly that on 2026-09-04: one 500 on a cold
+     * start, and the same URL returned 200 immediately afterwards.
+     *
+     * Only transient conditions are retried. A 403 or 404 is an answer, and
+     * asking again just doubles the latency before the same reply.
+     */
+    let response: Response | null = null;
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 250));
+      try {
+        response = await fetch(targetUrl.toString(), {
+          signal: AbortSignal.timeout(15000),
+          headers: {
+            'Accept': '*/*',
+            'User-Agent': 'Osiris-Tile-Proxy/1.0',
+          },
+          // Using Next.js fetch cache options to heavily cache tiles locally
+          next: {
+            revalidate: 31536000, // Cache for 1 year
+          }
+        });
+        if (response.ok || response.status < 500) break;
+        lastError = `HTTP ${response.status}`;
+      } catch (e) {
+        lastError = e;
+        response = null;
       }
-    });
+    }
+
+    if (!response) {
+      console.error('Tile proxy: upstream unreachable', targetUrl.hostname, lastError);
+      return NextResponse.json({ error: 'Upstream unreachable' }, { status: 502 });
+    }
 
     if (!response.ok) {
       return NextResponse.json({ error: 'Failed to fetch tile' }, { status: response.status });

@@ -66,10 +66,15 @@ export interface LabelTarget {
 /**
  * Re-paint place labels for imagery, or restore the style's own colours.
  *
- * Restoring passes `undefined`, which is how MapLibre is told to fall back to
- * the value in the loaded style — setting a hardcoded "original" here would
- * freeze the dark theme's colours and break the Style Studio, which repaints
- * these same properties.
+ * Restoring passes `null`, which is the documented way to unset a paint
+ * property: MapLibre's own docs say "Pass `null` to unset the existing value",
+ * and the layer then falls back to the loaded style. `undefined` happens to be
+ * treated the same by the current implementation but is not the contract, and
+ * relying on it would break silently on an upgrade — the labels would simply
+ * stay bright over the dark style.
+ *
+ * Setting a hardcoded "original" instead would freeze the dark theme's colours
+ * and fight the Style Studio, which repaints these same properties.
  *
  * Layers absent from the style are skipped rather than throwing: CARTO revises
  * dark-matter, and a renamed layer should cost one unreadable label, not the
@@ -79,12 +84,12 @@ export function setLabelsForImagery(map: LabelTarget, imagery: boolean): void {
   for (const cls of LABEL_CLASSES) {
     for (const id of cls.ids) {
       if (!map.getLayer(id)) continue;
-      map.setPaintProperty(id, 'text-color', imagery ? cls.color : undefined);
-      map.setPaintProperty(id, 'text-halo-color', imagery ? '#000000' : undefined);
-      map.setPaintProperty(id, 'text-halo-width', imagery ? cls.haloWidth : undefined);
+      map.setPaintProperty(id, 'text-color', imagery ? cls.color : null);
+      map.setPaintProperty(id, 'text-halo-color', imagery ? '#000000' : null);
+      map.setPaintProperty(id, 'text-halo-width', imagery ? cls.haloWidth : null);
       // A little blur softens the halo edge so heavy outlines do not read as
       // stickers pasted over the terrain.
-      map.setPaintProperty(id, 'text-halo-blur', imagery ? 0.6 : undefined);
+      map.setPaintProperty(id, 'text-halo-blur', imagery ? 0.6 : null);
     }
   }
 }

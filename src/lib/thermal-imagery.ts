@@ -1,8 +1,8 @@
 /**
  * OASIS VISION — real infrared imagery from NASA GIBS.
  *
- * This is the genuine article, and it is deliberately separate from the THERMAL
- * vision mode in lib/vision-modes.ts. That one is false colour applied to the
+ * This is the genuine article. It is what remains after the false-colour
+ * THERMAL/NIGHT/MONO vision modes were deleted: those applied a palette to the
  * rendered picture's brightness — a look. This is VIIRS band I5 brightness
  * temperature: an actual radiometric measurement from an instrument in orbit,
  * where a bright pixel means the ground under it is genuinely hot.
