@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
 import { cachedSource, peekSource } from '@/lib/sourceCache';
+import { fetchCaltransCameras } from './caltrans';
 
 export const maxDuration = 60;
 import { fetchAsfinagCameras } from './asfinag';
@@ -82,35 +83,6 @@ async function fetchWSDOTCameras(): Promise<any[]> {
   } catch (e) { return []; }
 }
 
-// ── US-WEST: Caltrans California ──
-async function fetchCaltransCameras(): Promise<any[]> {
-  try {
-    const res = await stealthFetch('https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query?where=1%3D1&outFields=*&f=json', { signal: AbortSignal.timeout(12000) });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const cams = [];
-    for (const feature of (data?.features || [])) {
-      const p = feature.attributes;
-      const lat = p.latitude;
-      const lng = p.longitude;
-      const url = p.currentImageURL;
-      if (!lat || !lng || !url) continue;
-      cams.push({
-        id: `cal-${p.OBJECTID}`,
-        lat,
-        lng,
-        name: p.locationName || 'Caltrans',
-        city: p.nearbyPlace || p.county || 'California',
-        country: 'US',
-        feed_url: url,
-        source: 'Caltrans'
-      });
-    }
-    return cams;
-  } catch (e) {
-    return [];
-  }
-}
 
 // ── CANADA: Ottawa, Toronto, Montreal, Quebec ──
 async function fetchCanadaCameras(): Promise<any[]> {
