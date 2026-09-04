@@ -137,6 +137,7 @@ const LAYER_GROUPS: LayerGroupDef[] = [
     layers: [
       { key: 'day_night', label: 'Day / Night Cycle', dataKey: '' },
       { key: 'terrain_3d', label: '3D Terrain & Buildings', dataKey: '' },
+      { key: 'thermal_ir', label: 'Infrared (VIIRS)', dataKey: '' },
     ],
   },
 ];

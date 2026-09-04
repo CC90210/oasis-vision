@@ -7,6 +7,7 @@ import {
   proxiedTileUrl, proxiedTileTemplate, needsProxy,
   AWS_TERRAIN_TEMPLATE, AWS_TERRAIN_ENCODING, AWS_TERRAIN_ATTRIBUTION,
 } from '@/lib/tile-proxy';
+import { thermalLayer, thermalTileUrl, gibsDate, THERMAL_ATTRIBUTION } from '@/lib/thermal-imagery';
 import { createSatelliteLayer, parseColor, type SatPoint } from '@/lib/satellite-layer';
 import { MAP_DEFAULTS, MAP_PALETTE_KEYS, readMapPalette, satColorFor, type MapPalette } from '@/lib/map-palette';
 import { STYLE_EVENT } from '@/lib/style-tokens';
@@ -2207,6 +2208,52 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     if (!mapReady || !mapRef.current || !flyToLocation) return;
     mapRef.current.flyTo({ center: [flyToLocation.lng, flyToLocation.lat], zoom: flyToLocation.zoom || 8, duration: 2000 });
   }, [mapReady, flyToLocation]);
+
+  /**
+   * Real infrared — NASA GIBS VIIRS band I5 brightness temperature.
+   *
+   * Distinct from the THERMAL vision mode, which is false colour over the
+   * rendered picture. This is a radiometric measurement: a bright pixel is
+   * genuinely hot ground. ~375 m/px, so a fire front reads and a vehicle never
+   * will. Keyless and CORS-open, so it is fetched directly.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const enabled = activeLayers.thermal_ir;
+
+    try {
+      if (enabled) {
+        const def = thermalLayer('viirs-day');
+        if (!def) return;
+        if (!map.getSource('oasis-thermal')) {
+          map.addSource('oasis-thermal', {
+            type: 'raster',
+            tiles: [thermalTileUrl(def, gibsDate())],
+            tileSize: 256,
+            maxzoom: def.maxZoom,
+            attribution: THERMAL_ATTRIBUTION,
+          });
+        }
+        if (!map.getLayer('oasis-thermal-layer')) {
+          /* Under the symbols so place names stay readable through it, and
+             semi-transparent so the basemap still gives it context. */
+          const firstSymbol = map.getStyle().layers?.find(l => l.type === 'symbol')?.id;
+          map.addLayer({
+            id: 'oasis-thermal-layer',
+            type: 'raster',
+            source: 'oasis-thermal',
+            paint: { 'raster-opacity': 0.75 },
+          }, firstSymbol);
+        }
+      } else {
+        if (map.getLayer('oasis-thermal-layer')) map.removeLayer('oasis-thermal-layer');
+        if (map.getSource('oasis-thermal')) map.removeSource('oasis-thermal');
+      }
+    } catch (e) {
+      console.warn('[OASIS] thermal IR toggle error:', e);
+    }
+  }, [mapReady, activeLayers.thermal_ir]);
 
   // Dynamic projection switching (lightweight — no terrain DEM)
   useEffect(() => {

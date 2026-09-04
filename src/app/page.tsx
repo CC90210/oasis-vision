@@ -317,6 +317,7 @@ export default function Dashboard() {
     sdk_air: true,
     sdk_naval: true,
     terrain_3d: false,
+    thermal_ir: false,
     malware: false,
     cyber_attacks: false,
     gdelt_events: false,
