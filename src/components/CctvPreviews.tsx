@@ -200,15 +200,21 @@ function Tile({ cam: camera, onOpen }: { cam: PreviewCamera; onOpen: (cam: Previ
 
   /* No reset needed on the way in: each tile is keyed by camera id, so a slot
      changing hands remounts this component with fresh state. */
+  /* A stream can fail and then its still can fail too. Tracking only the first
+     left a tile that never hides and never paints — an invisible box holding a
+     slot in the strip. */
+  const [fallbackFailed, setFallbackFailed] = useState(false);
+
   const onReady = useCallback(() => setLoaded(true), []);
   const onFail = useCallback(() => setFailed(true), []);
+  const onFallbackFail = useCallback(() => setFallbackFailed(true), []);
 
   /* A stream that fails but publishes a still is shown as the still rather than
      removed. A third of the Caltrans playlists are dead while their snapshot
      works, and dropping those tiles made the densest camera region on the map
      look emptier than the sources it is built from. */
   const fallback = camera.media.fallbackUrl;
-  const showFallback = failed && Boolean(fallback);
+  const showFallback = failed && Boolean(fallback) && !fallbackFailed;
 
   /* Only a camera with nothing left to show is worse than no tile: a broken box
      sitting over the map claiming to be a feed. */
@@ -235,7 +241,7 @@ function Tile({ cam: camera, onOpen }: { cam: PreviewCamera; onOpen: (cam: Previ
                 cam={{ ...camera, media: { kind: 'jpg', url: fallback as string } }}
                 onReady={onReady}
                 /* Nothing left to try: the stream is dead and so is the still. */
-                onFail={() => setLoaded(false)}
+                onFail={onFallbackFail}
               />
             : VIDEO_KINDS.has(camera.media.kind)
               ? <VideoMedia cam={camera} onReady={onReady} onFail={onFail} />

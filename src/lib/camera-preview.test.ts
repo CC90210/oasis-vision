@@ -22,6 +22,46 @@ describe('previewMedia', () => {
       .toEqual({ kind: 'mjpeg', url: 'https://x/stream' });
   });
 
+  /**
+   * 35% of the Caltrans playlists badged live answer 404 — the district index
+   * lists cameras the media edge has dropped. Those cameras still publish a
+   * working still, so the tile carries it and degrades to a picture instead of
+   * deleting itself from the map, which is what made the densest camera region
+   * render emptier than the source it is built from.
+   */
+  it('carries the still as a fallback for a stream camera', () => {
+    const caltrans = {
+      stream_type: 'hls',
+      stream_url: 'https://wzmedia.dot.ca.gov/D3/x.stream/playlist.m3u8',
+      feed_url: 'https://cwwp2.dot.ca.gov/data/d3/cctv/image/x/x.jpg',
+    };
+    expect(previewMedia(caltrans)).toEqual({
+      kind: 'hls',
+      url: caltrans.stream_url,
+      fallbackUrl: caltrans.feed_url,
+    });
+  });
+
+  it('carries the fallback for mp4 clip cameras too', () => {
+    const m = previewMedia({ stream_type: 'mp4', stream_url: 'https://x/c.mp4', feed_url: 'https://x/c.jpg' });
+    expect(m?.fallbackUrl).toBe('https://x/c.jpg');
+  });
+
+  it('omits fallbackUrl when the camera publishes no still', () => {
+    // Quebec 511 carries only the clip; there is nothing to fall back to, and
+    // an undefined fallback is what tells the tile to hide rather than to show
+    // a broken image.
+    const m = previewMedia({ stream_type: 'mp4', stream_url: 'https://x/c.mp4' });
+    expect(m).toEqual({ kind: 'mp4', url: 'https://x/c.mp4' });
+    expect(m).not.toHaveProperty('fallbackUrl');
+  });
+
+  it('does not give a snapshot camera a fallback to itself', () => {
+    const m = previewMedia({ feed_url: 'https://x/cam.jpg' });
+    expect(m).toEqual({ kind: 'jpg', url: 'https://x/cam.jpg' });
+    expect(m).not.toHaveProperty('fallbackUrl');
+  });
+
   it('leaves embeds as dots', () => {
     // Eight YouTube players over the map is a different feature.
     expect(previewMedia({ stream_type: 'iframe', stream_url: 'https://youtube.com/embed/x' })).toBeNull();
