@@ -19,6 +19,12 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
   const [retryCount, setRetryCount] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [currentTime, setCurrentTime] = useState<string>('');
+  // Several traffic authorities (Quebec 511, and every other `?format=mp4`
+  // source) do not serve a continuous stream — they serve a short, finite clip
+  // of recent footage. Replaying that buffer shows the same seconds forever
+  // while the badge claims LIVE. Bumping this nonce re-requests the URL so the
+  // next clip is the newest one the source has.
+  const [clipNonce, setClipNonce] = useState(0);
 
   useEffect(() => {
     const iv = setInterval(() => {
@@ -314,13 +320,19 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                 onError={() => { setLoading(false); setError(true); }}
               />
             ) : streamType === 'mp4' && camera.stream_url ? (
+              /* Not `loop`: looping replays one stale clip indefinitely. When the
+                 clip ends we re-request it with a fresh nonce, so the operator
+                 sees successive real footage instead of the same ten seconds. */
               <video
-                src={camera.stream_url}
+                key={clipNonce}
+                src={`${camera.stream_url}${camera.stream_url.includes('?') ? '&' : '?'}_t=${clipNonce}`}
                 className={`w-full h-full ${fullscreen ? 'object-contain' : 'object-cover'}`}
                 autoPlay
                 muted
                 playsInline
-                loop
+                onEnded={() => setClipNonce(n => n + 1)}
+                onError={() => { setLoading(false); setError(true); }}
+                onLoadedData={() => setLoading(false)}
               />
             ) : streamType === 'iframe' && streamUrl ? (
               <iframe
@@ -344,7 +356,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
               <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/80 border border-[var(--gold-primary)]/50 px-2 py-1 shadow-[0_0_10px_rgba(0,0,0,0.8)]">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]" />
                 <span className="text-[9px] font-mono text-white tracking-[0.2em]">
-                  {watchLiveUrl ? 'SNAPSHOT' : streamType === 'jpg' ? 'LIVE SAT-LINK' : 'LIVE FEED'}
+                  {watchLiveUrl ? 'SNAPSHOT' : streamType === 'mp4' ? 'RECENT CLIP' : streamType === 'jpg' ? 'LIVE SAT-LINK' : 'LIVE FEED'}
                 </span>
               </div>
             )}
@@ -386,7 +398,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                   <span className="text-[9px] text-[var(--text-muted)] font-mono tracking-widest">STATUS</span>
                   {/* Nothing is being received locally for an external feed — don't claim otherwise. */}
                   <span className={`text-[9px] font-mono tracking-widest ${externalOnly ? 'text-[var(--gold-primary)]' : 'text-[var(--alert-green)]'}`}>
-                    {view === 'offline' ? (gone ? 'REMOVED BY SOURCE' : 'OFF AIR AT SOURCE') : watchLiveUrl ? 'LIVE VIDEO AT SOURCE' : externalOnly ? 'HOSTED OFF-PLATFORM' : 'ACTIVE / RECORDING'}
+                    {view === 'offline' ? (gone ? 'REMOVED BY SOURCE' : 'OFF AIR AT SOURCE') : watchLiveUrl ? 'LIVE VIDEO AT SOURCE' : externalOnly ? 'HOSTED OFF-PLATFORM' : streamType === 'mp4' ? 'CLIP / AUTO-REFETCH' : 'ACTIVE / RECORDING'}
                   </span>
                 </div>
               </div>

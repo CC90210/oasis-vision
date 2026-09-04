@@ -1,12 +1,14 @@
 {
-  "name": "OSIRIS — Global Intelligence Platform",
-  "short_name": "OSIRIS",
-  "description": "Real-time global OSINT intelligence dashboard. Track 10K+ aircraft, 2K satellites, worldwide CCTV, earthquakes, wildfires, nuclear facilities, and more.",
+  "name": "OASIS VISION — Global Intelligence",
+  "short_name": "OASIS VISION",
+  "description": "OASIS AI global intelligence surface: live aircraft, satellites, maritime, worldwide CCTV, seismic, wildfire, weather, cyber and conflict feeds on a GPU-rendered globe.",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#06060C",
   "theme_color": "#D4AF37",
-  "orientation": "landscape-primary",
+  "orientation": "any",
   "categories": ["security", "intelligence", "analytics", "news"],
   "icons": [
     {
@@ -16,16 +18,28 @@
       "purpose": "any"
     },
     {
-      "src": "/osiris-icon.png",
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
+    },
+    {
+      "src": "/osiris-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

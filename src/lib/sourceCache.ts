@@ -92,6 +92,20 @@ export function cachedSource<T>(
   };
 }
 
+/**
+ * The last good data held for a key, without triggering or awaiting a fetch.
+ *
+ * A caller that gives a refresh a deadline needs somewhere to fall back to when
+ * that deadline passes. Returning [] there makes a slow region look like an
+ * empty one: the cameras blink off the map on the request that happens to land
+ * on a refresh, then reappear on the next. An entry keeps its previous data
+ * while a refresh is in flight, so this hands back the frame we already had.
+ */
+export function peekSource<T>(key: string): T[] {
+  const entry = store.get(key) as Entry<T> | undefined;
+  return entry?.data ?? [];
+}
+
 /** Test seam — drops all cached indexes. */
 export function clearSourceCache(): void {
   store.clear();

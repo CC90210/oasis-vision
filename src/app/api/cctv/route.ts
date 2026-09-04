@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
-import { cachedSource } from '@/lib/sourceCache';
+import { cachedSource, peekSource } from '@/lib/sourceCache';
 
 export const maxDuration = 60;
 import { fetchAsfinagCameras } from './asfinag';
@@ -506,8 +506,17 @@ function withBudget(region: string, fetcher: RegionFetcher): ReturnType<RegionFe
     fetcher().finally(() => clearTimeout(timer)),
     new Promise<Awaited<ReturnType<RegionFetcher>>>(resolve => {
       timer = setTimeout(() => {
-        console.warn(`[OSIRIS] cctv:${region} over ${REGION_BUDGET_MS}ms — returning without it`);
-        resolve([]);
+        // Falling back to [] made a slow region indistinguishable from an empty
+        // one: Canada aggregates DriveBC + Quebec 511 + Ontario MTO and reliably
+        // exceeds the budget on a cold refresh, so its cameras blinked off the
+        // map every time the 30-minute TTL lapsed, then returned on the next
+        // request. Serve the frame we already hold instead.
+        const stale = peekSource<Awaited<ReturnType<RegionFetcher>>[number]>(`cctv:${region}`);
+        console.warn(
+          `[OSIRIS] cctv:${region} over ${REGION_BUDGET_MS}ms — ` +
+          (stale.length ? `serving ${stale.length} cached cameras` : 'returning without it'),
+        );
+        resolve(stale);
       }, REGION_BUDGET_MS);
     }),
   ]);
