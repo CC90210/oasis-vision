@@ -3,6 +3,7 @@ import { stealthFetch } from '@/lib/stealthFetch';
 import { cachedSource, peekSource } from '@/lib/sourceCache';
 import { fetchCaltransCameras } from './caltrans';
 import { fetchOntarioCameras } from './ontario';
+import { IBI_STATE_FETCHERS, ibiStatesForPoint, IBI_STATES } from './ibi511-states';
 
 export const maxDuration = 60;
 import { fetchAsfinagCameras } from './asfinag';
@@ -431,6 +432,9 @@ const RAW_REGION_FETCHERS: Record<string, RegionFetcher> = {
   // Ontario 511 is its own module rather than another inline block: it was the
   // inline one, reading `latitude` off a `Latitude` API, that silently dropped
   // all 940 provincial sites.
+  // Seven state DOTs on the IBI 511 stack — see ibi511-states.ts.
+  ...IBI_STATE_FETCHERS,
+
   'canada': async () => {
     const [rest, on] = await Promise.all([fetchCanadaCameras(), fetchOntarioCameras()]);
     return [...rest, ...on];
@@ -537,6 +541,8 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
   if (lat > 24 && lat < 49 && lng > -85 && lng < -66) regions.push('us-east');
   // US-West
   if (lat > 24 && lat < 49 && lng > -125 && lng < -100) regions.push('us-west');
+  // State DOT cameras, matched to their own bounding boxes.
+  regions.push(...ibiStatesForPoint(lat, lng));
   // Utah (UDOT) — explicit, since us-west only covers WA + CA
   if (lat > 36.9 && lat < 42.1 && lng > -114.2 && lng < -108.9) regions.push('utah');
   // Oregon (ODOT) — explicit, since us-west only covers WA + CA
