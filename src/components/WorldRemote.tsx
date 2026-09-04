@@ -533,7 +533,7 @@ export default function WorldRemote({onClose,onPlaceOnMap}:{onClose?:()=>void,on
           {/* Footer */}
           <div className="flex items-center justify-between px-3 py-1.5 shrink-0" style={{borderTop:'1px solid rgba(255,255,255,0.03)',background:'rgba(0,0,0,0.2)'}}>
             <div className="flex items-center gap-1.5"><div className={`w-1.5 h-1.5 rounded-full ${btOk?'bg-[var(--alert-green)]':'bg-[#FF3D3D]'} ${scanning?'animate-pulse':''}`}/><span className="text-[9px] font-mono text-[var(--text-muted)] tracking-wider">{scanning?'SCANNING':liveCount>0?`${liveCount} LIVE`:'STANDBY'} · {upStr}</span></div>
-            <span className="text-[9px] font-mono text-[var(--text-muted)]/15 tracking-[0.2em]">MARAUDER V8</span>
+            <span className="text-[9px] font-mono text-[var(--text-muted)] tracking-[0.2em]">MARAUDER V8</span>
           </div>
         </motion.div>
       )}</AnimatePresence>

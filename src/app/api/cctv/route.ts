@@ -70,17 +70,32 @@ async function fetchTfLCameras(): Promise<any[]> {
 }
 
 // ── US-WEST: WSDOT Washington State (~500) ──
+//
+// KNOWN DEAD as of 2026-09-04: this endpoint, and every documented variant of
+// the CamerasREST service, returns 404 — WSDOT moved traveller data behind an
+// AccessCode-keyed API. Washington has therefore been contributing zero cameras
+// while looking exactly like a region that simply has none, because the catch
+// below returned [] without a word. Restoring it needs a free WSDOT API key.
+// The failure is logged rather than swallowed so it stays visible until then.
 async function fetchWSDOTCameras(): Promise<any[]> {
   try {
     const res = await stealthFetch('https://data.wsdot.wa.gov/log/public/cameras.json', { signal: AbortSignal.timeout(12000) });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      console.warn(`[OASIS] WSDOT cameras — HTTP ${res.status}; Washington will be empty (endpoint retired, needs an API key)`);
+      return [];
+    }
     const data = await res.json();
-    return (data || []).map((cam: any) => ({
+    const cams = (data || []).map((cam: any) => ({
       id: `wsdot-${cam.CameraID}`, lat: cam.CameraLocation?.Latitude, lng: cam.CameraLocation?.Longitude,
       name: cam.Title || 'WSDOT Camera', city: 'Washington', country: 'US',
       feed_url: cam.ImageURL || '', source: 'WSDOT',
     })).filter((c: any) => c.lat && c.lng && c.feed_url);
-  } catch (e) { return []; }
+    console.log(`[OASIS] Washington cameras — WSDOT: ${cams.length}`);
+    return cams;
+  } catch (e) {
+    console.warn('[OASIS] WSDOT cameras — fetch failed; Washington will be empty:', e instanceof Error ? e.message : e);
+    return [];
+  }
 }
 
 

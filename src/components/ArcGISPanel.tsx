@@ -389,7 +389,7 @@ export default function ArcGISPanel({
           }}
           onKeyDown={(e) => e.key === 'Enter' && runSearch(query)}
           placeholder="Search ArcGIS layers..."
-          className="w-full bg-black/60 border border-white/10 rounded-lg pl-8 pr-16 py-2.5 text-[10px] font-mono text-white placeholder:text-[var(--text-muted)]/40 focus:outline-none focus:border-[#D4AF37]/50 transition-colors"
+          className="w-full bg-black/60 border border-white/10 rounded-lg pl-8 pr-16 py-2.5 text-[10px] font-mono text-white placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[#D4AF37]/50 transition-colors"
         />
         <button
           onClick={() => runSearch(query)}
@@ -549,7 +549,7 @@ export default function ArcGISPanel({
 
                   {/* Snippet */}
                   <p className={`text-[10px] font-mono leading-relaxed line-clamp-2 mt-0.5 ${
-                    result.snippet ? 'text-[var(--text-muted)]/80' : 'text-[var(--text-muted)]/40 italic'
+                    result.snippet ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)] italic'
                   }`}>
                     {result.snippet || 'No description published for this layer.'}
                   </p>
@@ -566,7 +566,7 @@ export default function ArcGISPanel({
                         </span>
                       ))}
                       {result.tags.length > 4 && (
-                        <span className="text-[9px] font-mono text-[var(--text-muted)]/50 flex items-center px-1">
+                        <span className="text-[9px] font-mono text-[var(--text-muted)] flex items-center px-1">
                           +{result.tags.length - 4} more
                         </span>
                       )}
