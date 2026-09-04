@@ -12,6 +12,15 @@ interface CameraViewerProps {
   onLocate?: (lat: number, lng: number) => void;
 }
 
+/**
+ * A cache-busted URL for a clip source. These endpoints return "the most recent
+ * clip" for a fixed URL, so without a unique parameter the browser serves the
+ * copy it already has and the footage never advances.
+ */
+function freshClipUrl(base: string): string {
+  return `${base}${base.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+}
+
 export default function CameraViewer({ camera, onClose, onLocate }: CameraViewerProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -22,9 +31,19 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
   // Several traffic authorities (Quebec 511, and every other `?format=mp4`
   // source) do not serve a continuous stream — they serve a short, finite clip
   // of recent footage. Replaying that buffer shows the same seconds forever
-  // while the badge claims LIVE. Bumping this nonce re-requests the URL so the
-  // next clip is the newest one the source has.
-  const [clipNonce, setClipNonce] = useState(0);
+  // while the badge claims LIVE.
+  //
+  // Re-requesting on a single <video> fixed the staleness but introduced a
+  // black gap: swapping src tears down the decoder and the element paints
+  // nothing until the next clip buffers. So the clips are double-buffered
+  // across two stacked elements — the idle one starts loading the next clip as
+  // soon as the visible one begins playing, and they trade places on `ended`.
+  // By then the incoming clip is already buffered, so the handoff costs no
+  // visible frame.
+  const [clipA, setClipA] = useState<string | null>(null);
+  const [clipB, setClipB] = useState<string | null>(null);
+  const [activeSlot, setActiveSlot] = useState<'a' | 'b'>('a');
+  const clipRefs = useRef<{ a: HTMLVideoElement | null; b: HTMLVideoElement | null }>({ a: null, b: null });
 
   useEffect(() => {
     const iv = setInterval(() => {
@@ -150,18 +169,72 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
     }
   }, [camera, streamType, streamUrl, externalOnly, retryCount]);
 
-  // Auto-refresh for JPGs
+  // Auto-refresh for JPGs.
+  //
+  // Pointing the live <img> straight at the next URL is what made these cameras
+  // visibly jump: the element drops the frame it is showing the moment src
+  // changes, then holds empty until the new bytes arrive and decode. The
+  // operator sees a blank flash on every tick.
+  //
+  // Decode first, swap second. The fetch and decode happen on a detached image,
+  // and state only advances once the bytes are ready to paint, so the swap is a
+  // single composited frame. These sources publish stills, so this is a
+  // timelapse either way — but a seamless one.
   useEffect(() => {
     if (streamType !== 'jpg' || (!camera?.feed_url && !camera?.stream_url)) return;
     const targetUrl = camera.feed_url || camera.stream_url;
     if (!targetUrl) return;
 
-    const iv = setInterval(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const tick = () => {
       const url = targetUrl.includes('?') ? `${targetUrl}&_t=${Date.now()}` : `${targetUrl}?_t=${Date.now()}`;
-      setImageUrl(url);
-    }, 5000); // 5s refresh for JPG
-    return () => clearInterval(iv);
+      const pre = new Image();
+      pre.crossOrigin = 'anonymous';
+      const commit = () => {
+        if (cancelled) return;
+        setImageUrl(url);
+        setLoading(false);
+        // Schedule from completion, not on a fixed interval: a slow upstream
+        // would otherwise stack overlapping in-flight loads.
+        timer = setTimeout(tick, 5000);
+      };
+      pre.onload = () => {
+        // decode() resolves once the bitmap is ready to paint; without it the
+        // first paint after the swap can still stall. Older browsers lack it.
+        if (typeof pre.decode === 'function') pre.decode().then(commit, commit);
+        else commit();
+      };
+      pre.onerror = () => {
+        if (cancelled) return;
+        // Keep showing the last good frame and try again rather than blanking.
+        timer = setTimeout(tick, 5000);
+      };
+      pre.src = url;
+    };
+
+    timer = setTimeout(tick, 5000);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [camera, streamType]);
+
+  // Seed the first clip whenever an mp4 camera opens.
+  useEffect(() => {
+    if (streamType !== 'mp4' || !camera?.stream_url) return;
+    setClipA(freshClipUrl(camera.stream_url));
+    setClipB(null);
+    setActiveSlot('a');
+  }, [camera, streamType]);
+
+  // `autoPlay` only fires at mount, so the slot promoted on `ended` would sit
+  // paused on its first frame. Drive it explicitly.
+  useEffect(() => {
+    if (streamType !== 'mp4') return;
+    const el = clipRefs.current[activeSlot];
+    if (!el) return;
+    el.currentTime = 0;
+    void el.play().catch(() => {/* autoplay policy — element stays muted, so rare */});
+  }, [activeSlot, clipA, clipB, streamType]);
 
   if (!camera) return null;
 
@@ -320,20 +393,50 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                 onError={() => { setLoading(false); setError(true); }}
               />
             ) : streamType === 'mp4' && camera.stream_url ? (
-              /* Not `loop`: looping replays one stale clip indefinitely. When the
-                 clip ends we re-request it with a fresh nonce, so the operator
-                 sees successive real footage instead of the same ten seconds. */
-              <video
-                key={clipNonce}
-                src={`${camera.stream_url}${camera.stream_url.includes('?') ? '&' : '?'}_t=${clipNonce}`}
-                className={`w-full h-full ${fullscreen ? 'object-contain' : 'object-cover'}`}
-                autoPlay
-                muted
-                playsInline
-                onEnded={() => setClipNonce(n => n + 1)}
-                onError={() => { setLoading(false); setError(true); }}
-                onLoadedData={() => setLoading(false)}
-              />
+              /* Double-buffered clips. Both elements are always mounted and
+                 stacked; only the active one is visible. The idle one is already
+                 holding the next clip, so `ended` is a visibility flip rather
+                 than a teardown-and-reload. */
+              <div className="relative w-full h-full">
+                {(['a', 'b'] as const).map(slot => {
+                  const src = slot === 'a' ? clipA : clipB;
+                  const isActive = activeSlot === slot;
+                  if (!src) return null;
+                  return (
+                    <video
+                      key={slot}
+                      ref={el => { clipRefs.current[slot] = el; }}
+                      src={src}
+                      className={`absolute inset-0 w-full h-full ${fullscreen ? 'object-contain' : 'object-cover'}`}
+                      style={{ opacity: isActive ? 1 : 0 }}
+                      autoPlay={isActive}
+                      muted
+                      playsInline
+                      preload="auto"
+                      onPlaying={() => {
+                        if (!isActive) return;
+                        setLoading(false);
+                        // Start buffering the successor now, while there is still
+                        // a clip playing to cover the download.
+                        const next = freshClipUrl(camera.stream_url);
+                        if (slot === 'a') setClipB(next); else setClipA(next);
+                      }}
+                      onEnded={() => {
+                        if (!isActive) return;
+                        setActiveSlot(slot === 'a' ? 'b' : 'a');
+                      }}
+                      onError={() => {
+                        if (!isActive) return;
+                        // One dud clip should not kill the feed — advance to the
+                        // buffered sibling and only surface an error if neither
+                        // slot ever produced a frame.
+                        if (slot === 'a' ? clipB : clipA) setActiveSlot(slot === 'a' ? 'b' : 'a');
+                        else { setLoading(false); setError(true); }
+                      }}
+                    />
+                  );
+                })}
+              </div>
             ) : streamType === 'iframe' && streamUrl ? (
               <iframe
                 src={streamUrl}

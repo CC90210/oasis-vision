@@ -63,7 +63,9 @@
   /* ── Text ── */
   --text-primary: #E8E6E0;
   --text-secondary: #9B978E;
-  --text-muted: #5C5A54;
+  /* Raised from #5C5A54 (~2.7:1 on the panel ground) for the same reason as the
+     ghost theme: muted must still clear the 3:1 floor once opacity is applied. */
+  --text-muted: #7D796F;
   --text-heading: #F5F0E0;
   --text-gold: #D4AF37;
   --text-cyan: #00E5FF;
@@ -123,7 +125,10 @@ body.theme-ghost {
 
   --text-primary: #E1BEE7;
   --text-secondary: #9575CD;
-  --text-muted: #4A148C;
+  /* #4A148C sat at roughly 1.6:1 against --bg-primary (#08001A) — below even
+     the 3:1 floor for incidental UI text, and the header subtitle then dims it
+     to 40% on top of that, which is what made it unreadable. */
+  --text-muted: #8A6FC4;
   --text-heading: #B388FF;
   --text-gold: #B388FF;
   --text-cyan: #7C4DFF;

@@ -1,5 +1,5 @@
 {
-  "name": "OASIS VISION — Global Intelligence",
+  "name": "OASIS VISION \u2014 Global Intelligence",
   "short_name": "OASIS VISION",
   "description": "OASIS AI global intelligence surface: live aircraft, satellites, maritime, worldwide CCTV, seismic, wildfire, weather, cyber and conflict feeds on a GPU-rendered globe.",
   "id": "/",
@@ -9,14 +9,13 @@
   "background_color": "#06060C",
   "theme_color": "#D4AF37",
   "orientation": "any",
-  "categories": ["security", "intelligence", "analytics", "news"],
+  "categories": [
+    "security",
+    "intelligence",
+    "analytics",
+    "news"
+  ],
   "icons": [
-    {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
     {
       "src": "/android-chrome-192x192.png",
       "sizes": "192x192",
@@ -36,7 +35,7 @@
       "purpose": "maskable"
     },
     {
-      "src": "/osiris-icon.png",
+      "src": "/oasis-icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
