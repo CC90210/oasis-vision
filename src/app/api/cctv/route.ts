@@ -25,7 +25,6 @@ import { fetchJapanCameras } from './japan';
 import { fetchSwitzerlandCameras } from './switzerland';
 import { fetchFinlandCameras } from './finland';
 import { fetchHongKongCameras } from './hongkong';
-import { fetchUtahCameras } from './utah';
 import { fetchIcelandCameras } from './iceland';
 import { fetchTaiwanCameras } from './taiwan';
 import { fetchThailandCameras } from './thailand';
@@ -34,7 +33,6 @@ import { fetchNewZealandCameras } from './newzealand';
 import { fetchOregonCameras } from './oregon';
 import { fetchMichiganCameras } from './michigan';
 import { fetchIndianaCameras } from './indiana';
-import { fetchNevadaCameras } from './nevada';
 import { fetchLouisianaCameras } from './louisiana';
 import {
   fetchEastAsiaCameras, fetchSeAsiaCameras, fetchWestAsiaCameras,
@@ -459,7 +457,6 @@ const RAW_REGION_FETCHERS: Record<string, RegionFetcher> = {
   'switzerland': fetchSwitzerlandCameras,
   'finland': fetchFinlandCameras,
   'hongkong': fetchHongKongCameras,
-  'utah': fetchUtahCameras,
   'iceland': fetchIcelandCameras,
   'taiwan': fetchTaiwanCameras,
   'thailand': fetchThailandCameras,
@@ -468,7 +465,6 @@ const RAW_REGION_FETCHERS: Record<string, RegionFetcher> = {
   'oregon': fetchOregonCameras,
   'michigan': fetchMichiganCameras,
   'indiana': fetchIndianaCameras,
-  'nevada': fetchNevadaCameras,
   'louisiana': fetchLouisianaCameras,
   'eastasia': fetchEastAsiaCameras,
   'seasia': fetchSeAsiaCameras,
@@ -544,11 +540,9 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
   // State DOT cameras, matched to their own bounding boxes.
   regions.push(...ibiStatesForPoint(lat, lng));
   // Utah (UDOT) — explicit, since us-west only covers WA + CA
-  if (lat > 36.9 && lat < 42.1 && lng > -114.2 && lng < -108.9) regions.push('utah');
   // Oregon (ODOT) — explicit, since us-west only covers WA + CA
   if (lat > 41.9 && lat < 46.3 && lng > -124.6 && lng < -116.4) regions.push('oregon');
   // Nevada (NDOT) — explicit, since us-west only covers WA + CA
-  if (lat > 34.9 && lat < 42.1 && lng > -120.1 && lng < -113.9) regions.push('nevada');
   // US-Central
   if (lat > 24 && lat < 49 && lng > -105 && lng < -80) regions.push('us-central');
   // Michigan (MDOT) — explicit, since us-central only covers Illinois

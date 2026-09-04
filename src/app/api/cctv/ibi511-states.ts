@@ -52,6 +52,22 @@ export const IBI_STATES: Ibi511State[] = [
     bounds: { minLat: 31.2, maxLat: 37.1, minLng: -115.0, maxLng: -108.9 }, expect: 644 },
   { id: 'wisconsin', label: 'Wisconsin', base: 'https://511wi.gov', source: '511WI',
     bounds: { minLat: 42.4, maxLat: 47.4, minLng: -93.0, maxLng: -86.7 }, expect: 489 },
+  /* Utah and Nevada were bespoke modules — utah.ts and nevada.ts — that spoke
+     this same protocol against these same hosts, ~250 lines duplicating the
+     loader below. Folded in here so they gain the bounded concurrency, the
+     retry and the strided sampling, none of which they had: both sat on the
+     unbounded fan-out that made Georgia return nothing, and were only spared by
+     being small enough (21 and 7 pages) not to trip it yet.
+
+     Verified before migrating rather than assumed: utah.ts built feed_url from
+     the record id while this loader uses images[0].imageUrl, so a blind move
+     could have dropped every Utah camera. Both hosts return imageUrl on every
+     sampled row, and it is the more correct source — it is what the server
+     itself says the picture is. */
+  { id: 'utah', label: 'Utah', base: 'https://prod-ut.ibi511.com', source: 'UDOT',
+    bounds: { minLat: 36.9, maxLat: 42.1, minLng: -114.2, maxLng: -108.9 }, expect: 2075 },
+  { id: 'nevada', label: 'Nevada', base: 'https://www.nvroads.com', source: 'NDOT',
+    bounds: { minLat: 34.9, maxLat: 42.1, minLng: -120.1, maxLng: -113.9 }, expect: 640 },
 ];
 
 const PAGE_SIZE = 100;   // the server caps a response at 100 rows whatever is asked
@@ -73,7 +89,7 @@ const PAGE_SIZE = 100;   // the server caps a response at 100 rows whatever is a
  * "the rest of the state has no cameras". Striding spreads the sample
  * statewide. Same reasoning as sample() in opencctv.ts.
  */
-const MAX_PAGES = 18;
+const MAX_PAGES = 22;
 /** Pages in flight at once. See above — this is load-bearing, not politeness. */
 const PAGE_CONCURRENCY = 6;
 

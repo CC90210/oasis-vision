@@ -140,8 +140,18 @@ describe('pageStarts', () => {
   });
 
   it('caps the number of requests for a large state', () => {
-    // Florida is 49 pages. Fetching all of them cannot fit the budget.
-    expect(pageStarts(4953).length).toBeLessThanOrEqual(17);
+    // Florida is 49 pages; fetching all of them cannot fit the 12s budget.
+    // Asserted against the un-capped page count rather than the cap's current
+    // value, so tuning the constant does not mean editing the test.
+    const florida = pageStarts(4953);
+    expect(florida.length).toBeLessThan(48);
+    // And it must still be a useful sample, not a token one.
+    expect(florida.length).toBeGreaterThan(10);
+  });
+
+  it('returns a whole mid-size state rather than sampling it', () => {
+    // Utah is 21 pages, and a tighter cap returned 1,800 of its 2,075 cameras.
+    expect(pageStarts(2075)).toHaveLength(20);
   });
 
   it('spreads the sample across the whole range, not the front', () => {
@@ -168,5 +178,57 @@ describe('pageStarts', () => {
   it('returns offsets in ascending order', () => {
     const s = pageStarts(4953);
     expect([...s].sort((a, b) => a - b)).toEqual(s);
+  });
+});
+
+/**
+ * Coverage inherited from utah.test.ts and nevada.test.ts, which were deleted
+ * with their modules. Both spoke this same protocol against these same hosts;
+ * these keep their behaviour asserted through the generic mapper.
+ */
+describe('migrated states', () => {
+  const utah = IBI_STATES.find(s => s.id === 'utah')!;
+  const nevada = IBI_STATES.find(s => s.id === 'nevada')!;
+
+  it('keeps the UDOT label and Utah box', () => {
+    const cam = mapRecord({
+      id: 112731,
+      location: 'I-15 NB @ Beck St',
+      latLng: { geography: { wellKnownText: 'POINT (-111.9 40.8)' } },
+      images: [{ id: 112731, imageUrl: '/map/Cctv/112731', description: '' }],
+    }, utah)!;
+    expect(cam.source).toBe('UDOT');
+    expect(cam.city).toBe('Utah');
+    expect(cam.feed_url).toBe('https://prod-ut.ibi511.com/map/Cctv/112731');
+    // Utah's description is empty on these rows, so the name falls to location.
+    expect(cam.name).toBe('I-15 NB @ Beck St');
+  });
+
+  it('takes Nevada HLS straight from the row, as nevada.ts did', () => {
+    const cam = mapRecord({
+      id: 2,
+      roadway: 'McCarran & Caughlin/cashill',
+      location: 'N/A',
+      latLng: { geography: { wellKnownText: 'POINT (-119.8 39.5)' } },
+      images: [{
+        id: 2, description: 'McCarran & Caughlin/cashill', imageUrl: '/map/Cctv/2',
+        videoUrl: 'https://d2wse2.its.nv.gov:443/renoxcd02/abc_public.stream/playlist.m3u8',
+      }],
+    }, nevada)!;
+    expect(cam.source).toBe('NDOT');
+    expect(cam.stream_type).toBe('hls');
+    expect(cam.feed_url).toBe('https://www.nvroads.com/map/Cctv/2');
+  });
+
+  it('drops an out-of-state row for each', () => {
+    const far = { geography: { wellKnownText: 'POINT (-74.0 40.7)' } };   // New York
+    for (const st of [utah, nevada]) {
+      expect(mapRecord({ id: 1, latLng: far, images: [{ id: 1, imageUrl: '/x' }] }, st), st.id).toBeNull();
+    }
+  });
+
+  it('routes their viewports to them', () => {
+    expect(ibiStatesForPoint(40.76, -111.89)).toContain('utah');    // Salt Lake City
+    expect(ibiStatesForPoint(36.17, -115.14)).toContain('nevada');  // Las Vegas
   });
 });
