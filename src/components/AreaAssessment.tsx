@@ -103,6 +103,8 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
   // One audio element for the panel's lifetime, and every object URL revoked.
   // Without this, each read-out leaks an MP3 the size of the briefing.
   useEffect(() => () => {
+    generationRef.current += 1; // nothing in flight may play into a dead panel
+    abortRef.current?.abort();
     audioRef.current?.pause();
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
   }, []);
@@ -126,8 +128,26 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
     return buildAreaBrief({ ...data, radius, ...coverage } as BriefInput);
   }, [data, radius, coverage]);
 
+  /**
+   * Which read-out is current. Incremented by stop() and by each new speak(),
+   * and checked after every await.
+   *
+   * Without it, pressing STOP during synthesis did nothing at all: the audio
+   * element has no source yet, so `pause()` is a no-op, and when the fetch
+   * resolved the continuation still ran `audio.play()` — the briefing you
+   * cancelled played anyway. `setSpeaking(false)` had meanwhile flipped the
+   * button back to BRIEF ME, so the only way to get a STOP control back was to
+   * press it, starting a SECOND synthesis and spending the quota twice.
+   */
+  const generationRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+
   const stop = useCallback(() => {
-    audioRef.current?.pause();
+    generationRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    const audio = audioRef.current;
+    if (audio) { audio.pause(); audio.currentTime = 0; }
     setSpeaking(false);
   }, []);
 
@@ -135,6 +155,12 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
     if (!brief?.speech) return;
     setVoiceError(null);
     setSpeaking(true);
+
+    // Claim this generation. Anything older must not reach the speaker.
+    const generation = ++generationRef.current;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     /**
      * Unlock audio SYNCHRONOUSLY, before any await.
@@ -159,7 +185,9 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: brief.speech, voiceId: voiceId || undefined }),
+        signal: controller.signal,
       });
+      if (generationRef.current !== generation) return; // cancelled mid-flight
       if (!res.ok) {
         // Surface the server's actual reason. "Voice failed" hides the one
         // thing worth knowing, which is usually a spent character quota.
@@ -167,17 +195,28 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
         throw new Error(j.error || `Voice service returned ${res.status}`);
       }
       const blob = await res.blob();
+      if (generationRef.current !== generation) return;
+
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
       objectUrlRef.current = URL.createObjectURL(blob);
 
       audio.src = objectUrlRef.current;
-      audio.onended = () => setSpeaking(false);
-      audio.onerror = () => { setVoiceError('Audio playback failed.'); setSpeaking(false); };
+      audio.onended = () => { if (generationRef.current === generation) setSpeaking(false); };
+      audio.onerror = () => {
+        if (generationRef.current !== generation) return;
+        setVoiceError('Audio playback failed.');
+        setSpeaking(false);
+      };
       await audio.play();
 
-      // Spending characters changes the balance; reflect it without a refetch.
+      // The characters were spent the moment the server answered, whether or
+      // not this generation is still current, so the balance is updated here
+      // rather than behind the guard above.
       setQuota((q) => (q ? { ...q, remaining: Math.max(0, q.remaining - brief.speech.length) } : q));
     } catch (e) {
+      // An abort is the operator pressing STOP, not a failure to report.
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (generationRef.current !== generation) return;
       setVoiceError(e instanceof Error ? e.message : 'Voice synthesis failed.');
       setSpeaking(false);
     }
