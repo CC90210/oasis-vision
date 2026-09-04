@@ -44,7 +44,9 @@ threatfox.json
 scripts/
 
 # AI agent config files
-CLAUDE.md
+# CLAUDE.md is deliberately TRACKED here, unlike upstream: it is the install
+# and operating guide a Claude session reads on any machine.
+# CLAUDE.md
 AGENTS.md
 
 # Internal dev notes
