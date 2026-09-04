@@ -114,3 +114,69 @@ export function offPlatformView(state: {
   // confident label is worse than no picture.
   return state.offline ? 'offline' : 'inline';
 }
+
+/** What the viewer's two labels should read for a given feed state. */
+export interface FeedLabels {
+  /** The badge over the picture, beside the pulsing dot. */
+  badge: string;
+  /** The STATUS field in the footer. */
+  status: string;
+}
+
+/** Everything those labels are derived from. */
+export interface FeedState {
+  /** The kind actually being rendered, after any fallback. */
+  streamType: string;
+  /** An advertised stream that turned out not to play. */
+  streamFailed: boolean;
+  /** Live video exists, but only on the operator's own page. */
+  watchLive: boolean;
+  /** Nothing is being received locally. */
+  externalOnly: boolean;
+  /** The source says the camera is off air. */
+  offline: boolean;
+  /** The camera's page is a 404 — withdrawn, not merely off. */
+  gone: boolean;
+}
+
+/**
+ * The one place that decides how a feed describes itself.
+ *
+ * These were two nested ternaries at their call sites, six and seven branches
+ * deep, and they drifted exactly as that shape invites: the badge learned about
+ * mjpeg and the status line did not, so a continuous MJPEG stream announced
+ * itself as LIVE MJPEG above a footer reading ACTIVE / RECORDING.
+ *
+ * The wording is deliberately literal, because every label here used to
+ * overstate what was on screen. A refreshing JPEG was "LIVE SAT-LINK" — there
+ * is no satellite link, and a timed still is not live video — so when Ontario
+ * served its own "camera view currently not available" notice as a valid JPEG,
+ * the interface captioned an outage as live video.
+ */
+export function describeFeed(s: FeedState): FeedLabels {
+  if (s.offline) {
+    return {
+      badge: s.gone ? 'WITHDRAWN' : 'OFF AIR',
+      status: s.gone ? 'REMOVED BY SOURCE' : 'OFF AIR AT SOURCE',
+    };
+  }
+  if (s.streamFailed) {
+    return { badge: 'SNAPSHOT · STREAM OFFLINE', status: 'STREAM 404 AT SOURCE' };
+  }
+  if (s.watchLive) {
+    return { badge: 'SNAPSHOT', status: 'LIVE VIDEO AT SOURCE' };
+  }
+  if (s.externalOnly) {
+    return { badge: 'EXTERNAL', status: 'HOSTED OFF-PLATFORM' };
+  }
+  switch (s.streamType) {
+    // A finite clip of recent footage, re-requested when it ends.
+    case 'mp4': return { badge: 'RECENT CLIP', status: 'CLIP / AUTO-REFETCH' };
+    // A still on a timer. ~20s is the max-age the traffic authorities send.
+    case 'jpg': return { badge: 'SNAPSHOT', status: 'STILL / REFRESHES ~20s' };
+    // Genuinely continuous, unlike the two above.
+    case 'mjpeg': return { badge: 'LIVE MJPEG', status: 'CONTINUOUS STREAM' };
+    case 'hls': return { badge: 'LIVE FEED', status: 'CONTINUOUS STREAM' };
+    default: return { badge: 'LIVE FEED', status: 'ACTIVE' };
+  }
+}

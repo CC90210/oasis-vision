@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isHostedOffPlatform, liveFeedAtSource, localEmbed, needsResolution, offPlatformView } from './camera-feed';
+import { describeFeed, isHostedOffPlatform, liveFeedAtSource, localEmbed, needsResolution, offPlatformView, type FeedState } from './camera-feed';
 
 const SKY = 'https://www.skylinewebcams.com/en/webcam/japan/gunma/yubatake/yubatake.html';
 const WATCH = 'https://www.youtube.com/watch?v=UemFRPrl1hk';
@@ -167,5 +167,89 @@ describe('liveFeedAtSource', () => {
     expect(liveFeedAtSource(undefined)).toBeNull();
     expect(liveFeedAtSource({})).toBeNull();
     expect(liveFeedAtSource({ feed_url: JPG })).toBeNull();
+  });
+});
+
+/**
+ * These labels were two nested ternaries at two call sites. Every one of them
+ * overstated what was actually on screen at some point this session, and the
+ * two had already drifted apart over mjpeg, so the rules are pinned here.
+ */
+describe('describeFeed', () => {
+  const base: FeedState = {
+    streamType: 'hls',
+    streamFailed: false,
+    watchLive: false,
+    externalOnly: false,
+    offline: false,
+    gone: false,
+  };
+  const f = (over: Partial<FeedState> = {}) => describeFeed({ ...base, ...over });
+
+  it('never calls a timed still live', () => {
+    // "LIVE SAT-LINK" was wrong twice: no satellite link, and a still on a
+    // timer is not live video. Ontario serves its own outage notice as a valid
+    // JPEG, so this label sat over a picture saying the camera was down.
+    const l = f({ streamType: 'jpg' });
+    expect(l.badge).toBe('SNAPSHOT');
+    expect(l.status).toBe('STILL / REFRESHES ~20s');
+    expect(l.badge).not.toMatch(/LIVE/);
+  });
+
+  it('never calls a finite clip live', () => {
+    const l = f({ streamType: 'mp4' });
+    expect(l.badge).toBe('RECENT CLIP');
+    expect(l.badge).not.toMatch(/LIVE/);
+  });
+
+  it('does call genuinely continuous streams live', () => {
+    expect(f({ streamType: 'hls' }).badge).toBe('LIVE FEED');
+    expect(f({ streamType: 'mjpeg' }).badge).toBe('LIVE MJPEG');
+  });
+
+  // The drift this function exists to prevent: the badge knew about mjpeg and
+  // the status line did not, so LIVE MJPEG sat above ACTIVE / RECORDING.
+  it('keeps badge and status consistent for every stream kind', () => {
+    for (const streamType of ['jpg', 'mp4', 'mjpeg', 'hls']) {
+      const l = f({ streamType });
+      const badgeSaysLive = /LIVE/.test(l.badge);
+      const statusSaysContinuous = l.status === 'CONTINUOUS STREAM';
+      expect(badgeSaysLive, `${streamType}: badge and status disagree`).toBe(statusSaysContinuous);
+    }
+  });
+
+  it('reports a failed stream as a snapshot, naming the reason', () => {
+    const l = f({ streamType: 'jpg', streamFailed: true });
+    expect(l.badge).toBe('SNAPSHOT · STREAM OFFLINE');
+    expect(l.status).toBe('STREAM 404 AT SOURCE');
+  });
+
+  it('distinguishes withdrawn from merely off air', () => {
+    expect(f({ offline: true, gone: false }).status).toBe('OFF AIR AT SOURCE');
+    expect(f({ offline: true, gone: true }).status).toBe('REMOVED BY SOURCE');
+  });
+
+  it('puts offline ahead of every other state', () => {
+    // A camera the source has withdrawn is not "a snapshot with a dead stream".
+    const l = f({ offline: true, gone: true, streamFailed: true, watchLive: true, streamType: 'mp4' });
+    expect(l.badge).toBe('WITHDRAWN');
+  });
+
+  it('says nothing is received locally for an external feed', () => {
+    const l = f({ externalOnly: true, streamType: 'jpg' });
+    expect(l.badge).toBe('EXTERNAL');
+    expect(l.status).toBe('HOSTED OFF-PLATFORM');
+  });
+
+  it('points at the source when live video exists only on its own page', () => {
+    const l = f({ watchLive: true, streamType: 'jpg' });
+    expect(l.badge).toBe('SNAPSHOT');
+    expect(l.status).toBe('LIVE VIDEO AT SOURCE');
+  });
+
+  it('falls back to a safe pair for an unrecognised kind', () => {
+    const l = f({ streamType: 'rtsp' });
+    expect(l.badge).toBeTruthy();
+    expect(l.status).toBeTruthy();
   });
 });

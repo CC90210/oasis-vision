@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ExternalLink, RefreshCw, MapPin, Camera, CameraOff, Maximize2, PlayCircle } from 'lucide-react';
 import Hls from 'hls.js';
-import { isHostedOffPlatform, liveFeedAtSource, localEmbed, needsResolution, offPlatformView } from '@/lib/camera-feed';
+import { describeFeed, isHostedOffPlatform, liveFeedAtSource, localEmbed, needsResolution, offPlatformView } from '@/lib/camera-feed';
 import { freshen, preloadFrame } from '@/lib/camera-preview';
 
 interface CameraViewerProps {
@@ -112,6 +112,16 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
   const streamUrl: string | undefined = resolvedEmbed || camera?.stream_url;
   const view = offPlatformView({ hostedOffPlatform, resolving, resolvedEmbed, offline });
   const externalOnly = view !== 'inline';
+  /* Both labels come from one place now: they were nested ternaries at two
+     call sites and had already drifted apart over mjpeg. */
+  const feedLabels = describeFeed({
+    streamType,
+    streamFailed,
+    watchLive: Boolean(watchLiveUrl),
+    externalOnly,
+    offline: view === 'offline',
+    gone,
+  });
 
   /* Keyed on the camera alone. Putting this in the effect below would loop:
      that effect depends on streamType, and streamType is derived from
@@ -456,7 +466,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
               <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/80 border border-[var(--gold-primary)]/50 px-2 py-1 shadow-[0_0_10px_rgba(0,0,0,0.8)]">
                 <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_#ef4444]" />
                 <span className="text-[9px] font-mono text-white tracking-[0.2em]">
-                  {streamFailed ? 'SNAPSHOT · STREAM OFFLINE' : watchLiveUrl ? 'SNAPSHOT' : streamType === 'mp4' ? 'RECENT CLIP' : streamType === 'jpg' ? 'SNAPSHOT' : streamType === 'mjpeg' ? 'LIVE MJPEG' : 'LIVE FEED'}
+                  {feedLabels.badge}
                 </span>
               </div>
             )}
@@ -498,7 +508,7 @@ export default function CameraViewer({ camera, onClose, onLocate }: CameraViewer
                   <span className="text-[9px] text-[var(--text-muted)] font-mono tracking-widest">STATUS</span>
                   {/* Nothing is being received locally for an external feed — don't claim otherwise. */}
                   <span className={`text-[9px] font-mono tracking-widest ${externalOnly ? 'text-[var(--gold-primary)]' : 'text-[var(--alert-green)]'}`}>
-                    {view === 'offline' ? (gone ? 'REMOVED BY SOURCE' : 'OFF AIR AT SOURCE') : streamFailed ? 'STREAM 404 AT SOURCE' : watchLiveUrl ? 'LIVE VIDEO AT SOURCE' : externalOnly ? 'HOSTED OFF-PLATFORM' : streamType === 'mp4' ? 'CLIP / AUTO-REFETCH' : streamType === 'jpg' ? 'STILL / REFRESHES ~20s' : 'ACTIVE / RECORDING'}
+                    {feedLabels.status}
                   </span>
                 </div>
               </div>
