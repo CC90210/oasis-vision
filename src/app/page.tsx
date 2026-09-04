@@ -1240,9 +1240,11 @@ export default function Dashboard() {
         </div>
 
         {/* Area assessment for wherever the map is looking.
-            The dossier already existed but was bound to right-click only, so
-            nothing on screen said it was there. */}
-        {!isMobile && (
+            On mobile too: the only other way in is the map's contextmenu event,
+            and iOS Safari answers a long-press with its own callout menu rather
+            than firing it — so on a phone this button was the feature's sole
+            entry point and it was the one platform hiding it. */}
+        {(
           <button
             onClick={() => mapCenter && handleRightClick({ lat: mapCenter.lat, lng: mapCenter.lng })}
             disabled={!mapCenter || dossierLoading}
@@ -1255,7 +1257,10 @@ export default function Dashboard() {
                 ? 'Waiting for the map to finish loading — the assessment needs a centre point.'
                 : 'Assess the centre of the current view: what is mapped on the ground, live conditions, and what is on record at that exact point — then have it read aloud. Right-clicking anywhere on the map assesses that point instead.'
             }
-            className="pointer-events-auto mt-1.5 w-full px-3 py-2 rounded-xl border text-[10px] font-mono font-bold tracking-[0.15em] backdrop-blur-2xl transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+            /* min-h-[44px] on touch, measured rather than assumed: padding
+               alone got this to 41px, still under the minimum a thumb can
+               reliably hit. */
+            className="pointer-events-auto mt-1.5 w-full px-3 py-3 md:py-2 min-h-[44px] md:min-h-0 rounded-xl border text-[10px] font-mono font-bold tracking-[0.15em] backdrop-blur-2xl transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
             style={{
               color: 'var(--gold-primary)',
               background: 'var(--bg-panel)',

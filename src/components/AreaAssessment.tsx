@@ -135,6 +135,25 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
     if (!brief?.speech) return;
     setVoiceError(null);
     setSpeaking(true);
+
+    /**
+     * Unlock audio SYNCHRONOUSLY, before any await.
+     *
+     * iOS Safari only allows playback that begins inside a user-gesture stack
+     * frame. The synthesis round-trip below is an await, and by the time it
+     * resolves the gesture has expired — so `play()` rejects with
+     * NotAllowedError and the read-out is silent on the one device CC uses
+     * most. Creating and starting the element here, while the click is still on
+     * the stack, keeps it unlocked; the real source is attached afterwards.
+     */
+    const audio = audioRef.current || new Audio();
+    audioRef.current = audio;
+    audio.muted = false;
+    try {
+      audio.play().catch(() => { /* nothing loaded yet — the unlock is the point */ });
+      audio.pause();
+    } catch { /* non-iOS browsers may not need this and may not like it */ }
+
     try {
       const res = await fetch('/api/voice/speak', {
         method: 'POST',
@@ -151,8 +170,6 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
       objectUrlRef.current = URL.createObjectURL(blob);
 
-      const audio = audioRef.current || new Audio();
-      audioRef.current = audio;
       audio.src = objectUrlRef.current;
       audio.onended = () => setSpeaking(false);
       audio.onerror = () => { setVoiceError('Audio playback failed.'); setSpeaking(false); };
