@@ -2240,6 +2240,60 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
     try {
       if (enabled) {
+        /* ── REAL ELEVATION ──
+         *
+         * This toggle was called "3D TERRAIN" while adding only fill-extrusion
+         * buildings: no DEM, so no mountains, no valleys, no relief. Outside a
+         * city centre it did nothing at all, which is why the world looked flat.
+         *
+         * MapLibre 5 renders genuine terrain from a raster-dem source.
+         * AWS Terrain Tiles are keyless and public, but serve no
+         * Access-Control-Allow-Origin, so they come through the tile proxy.
+         */
+        if (!map.getSource('oasis-dem')) {
+          /* The {z}/{x}/{y} placeholders must survive into the final string:
+             MapLibre substitutes them by literal match, and encodeURIComponent
+             turns them into %7Bz%7D, which matches nothing — so the source
+             would sit there requesting no tiles at all and terrain would
+             silently do nothing. Encode the URL, then restore the braces. */
+          const demUrl =
+            '/api/proxy-tiles?url=' +
+            encodeURIComponent('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png')
+              .replace(/%7B/g, '{')
+              .replace(/%7D/g, '}');
+          map.addSource('oasis-dem', {
+            type: 'raster-dem',
+            tiles: [demUrl],
+            tileSize: 256,
+            // AWS publishes Terrarium encoding, not Mapbox's. Getting this
+            // wrong renders a plausible but entirely wrong landscape.
+            encoding: 'terrarium',
+            maxzoom: 13,
+            attribution: 'Elevation: AWS Terrain Tiles · SRTM, GMTED, ETOPO1',
+          });
+        }
+        if (!map.getTerrain()) {
+          // 1.4 reads as relief without turning hills into spikes.
+          map.setTerrain({ source: 'oasis-dem', exaggeration: 1.4 });
+        }
+
+        /* Hillshade under the data layers: terrain alone is only visible when
+           pitched, and shading makes the relief legible from directly above. */
+        if (!map.getLayer('oasis-hillshade')) {
+          const firstSymbol = map.getStyle().layers?.find(l => l.type === 'symbol')?.id;
+          map.addLayer({
+            id: 'oasis-hillshade',
+            source: 'oasis-dem',
+            type: 'hillshade',
+            paint: {
+              'hillshade-exaggeration': 0.45,
+              'hillshade-shadow-color': '#000000',
+              'hillshade-highlight-color': '#8899aa',
+              'hillshade-accent-color': '#000000',
+            },
+          }, firstSymbol);
+        }
+
         // ── 3D BUILDINGS SOURCE (OpenFreeMap CDN — no API key, globally cached) ──
         if (!map.getSource('osiris-buildings')) {
           map.addSource('osiris-buildings', {
@@ -2291,10 +2345,15 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
 
       } else {
         // ── DISABLE 3D ──
+        // Terrain must be released before its source, or MapLibre keeps a
+        // reference to a source that no longer exists and throws on next draw.
+        if (map.getTerrain()) map.setTerrain(null);
+        if (map.getLayer('oasis-hillshade')) map.removeLayer('oasis-hillshade');
         if (map.getLayer('osiris-3d-buildings')) map.removeLayer('osiris-3d-buildings');
+        if (map.getSource('oasis-dem')) map.removeSource('oasis-dem');
       }
     } catch (e) {
-      console.warn('[OSIRIS] 3D terrain toggle error:', e);
+      console.warn('[OASIS] 3D terrain toggle error:', e);
     }
   }, [mapReady, activeLayers.terrain_3d]);
 
