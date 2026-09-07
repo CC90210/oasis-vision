@@ -3,10 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Volume2, Square, X, Loader2, AlertTriangle } from 'lucide-react';
 import { buildAreaBrief, type BriefInput } from '@/lib/area-brief';
-// lib/dead-reckoning's version, not a local one: it measures longitude with
-// shortestLngDelta, so a camera at 179.9E and a point at 179.9W come out 22 km
-// apart instead of most of the way round the planet. This map has cameras in
-// New Zealand and the Russian Far East, so that edge is reachable.
+// lib/dead-reckoning's version rather than a local copy: same units (metres),
+// same {lat,lng} point shape, and already tested. Purely de-duplication — this
+// codebase had four great-circle implementations across three signatures and
+// two units, and a fifth would not have helped.
+//
+// Correcting an earlier claim in commit 5c5dec1: the local copy was NOT broken
+// at the antimeridian. Haversine's longitude term is sin²(dLng/2), and
+// sin(x + 180°) = −sin(x), so squaring makes it invariant under ±360°.
+// Measured: 179.9E → 179.9W gives 21.323 km either way. shortestLngDelta earns
+// its place in converge(), where an interpolated position must not cross the
+// globe — not here.
 import { distanceM } from '@/lib/dead-reckoning';
 
 /**

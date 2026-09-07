@@ -138,11 +138,14 @@ describe('knotsToMps', () => {
 
 describe('distanceM', () => {
   /**
-   * The antimeridian case, which is why this helper exists rather than a plain
-   * haversine: it measures longitude with shortestLngDelta. A naive
-   * `(b.lng - a.lng)` returns most of the planet's circumference for two points
-   * a few kilometres apart, and OASIS VISION has cameras either side of the
-   * 180th meridian.
+   * The antimeridian case. Worth pinning, but NOT for the reason commit 5c5dec1
+   * claimed: a naive `(b.lng - a.lng)` gets this right too. Haversine's
+   * longitude term is sin²(dLng/2), and sin(x + 180°) = −sin(x), so squaring
+   * makes it invariant under ±360°. Measured both ways: 21.323 km.
+   *
+   * So this guards the invariance property, not a bug shortestLngDelta fixes.
+   * shortestLngDelta earns its place in converge(), where an interpolated
+   * position must take the short way round rather than sweep the globe.
    */
   it('measures across the antimeridian the short way', () => {
     const d = distanceM({ lat: -16.5, lng: 179.9 }, { lat: -16.5, lng: -179.9 });
