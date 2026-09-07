@@ -130,7 +130,7 @@ function digestAlerts(payload: any): Digest {
   if (Array.isArray(news) && news.length) {
     const scored = news.map(n => num(n?.risk_score) ?? 0);
     const hot = scored.filter(s => s >= 8).length;
-    facts.push(`${news.length} OSINT news items; ${hot} flagged high-priority (risk ≥ 8).`);
+    facts.push(`${news.length} news items; ${hot} flagged high-priority (risk ≥ 8).`);
     const topItem = [...news].sort((a, b) => (num(b?.risk_score) ?? 0) - (num(a?.risk_score) ?? 0))[0];
     if (topItem?.title) highlights.push(`📰 ${decodeEntities(String(topItem.title)).slice(0, 48)}`);
     if (hot) highlights.push(`🔴 ${hot} hot items`);

@@ -22,22 +22,27 @@ export const metadata: Metadata = {
     template: "%s | OASIS VISION",
   },
   description: SITE_DESCRIPTION,
+  // These ship inside the served HTML, so they are branding, not just SEO.
+  // The "OSINT" / "open source intelligence" identity terms were removed on
+  // 2026-09-07 to finish the rebrand — the header stopped saying it long ago,
+  // but the meta keywords still did, and a probe of the live page found it.
+  // The FUNCTIONAL terms stay: they describe what the tool actually does and
+  // are what someone searching for the capability would type.
   keywords: [
-    // OSINT Tools - Primary focus
-    "OSINT tools", "free OSINT tools", "online OSINT toolkit", "OSINT framework",
+    // Reconnaissance toolkit
+    "reconnaissance tools", "online recon toolkit", "network reconnaissance",
     "nmap online", "nmap scanner online", "free nmap scan", "port scanner online",
     "DNS lookup tool", "WHOIS lookup", "reverse DNS", "DNS records",
     "SSL certificate checker", "certificate transparency", "cert lookup",
     "BGP routing lookup", "ASN lookup", "IP geolocation",
     "threat intelligence", "threat intel lookup", "IP reputation check",
-    "network reconnaissance", "recon tools", "penetration testing tools",
+    "recon tools", "penetration testing tools",
     "cybersecurity tools", "infosec tools", "security scanner",
-    "linux OSINT tools", "kali linux tools online", "OSINT browser tools",
-    
-    // Intelligence Platform
-    "OSINT", "open source intelligence", "intelligence platform", "global intelligence",
-    "geospatial intelligence", "GEOINT", "SIGINT", "real-time tracking",
-    "palantir alternative", "open source palantir", "intelligence dashboard",
+
+    // Intelligence platform
+    "intelligence platform", "global intelligence",
+    "geospatial intelligence", "GEOINT", "real-time tracking",
+    "palantir alternative", "intelligence dashboard",
     
     // Tracking & Data
     "flight tracker", "aircraft tracking", "ADS-B tracker", "live flight radar",

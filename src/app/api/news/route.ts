@@ -30,13 +30,21 @@ const KEYWORD_COORDS: Record<string, [number, number]> = {
   'united states': [38.907, -77.036], 'europe': [48.800, 2.300], 'middle east': [31.500, 34.800]
 };
 
-function scoreRisk(text: string): number {
+/**
+ * Risk score for a headline: a keyword tally, and nothing more than that.
+ *
+ * It returns the matched terms alongside the number because the UI used to
+ * render "AI Analysis indicates elevated tactical priority based on OSINT
+ * stream patterns" in a red alert box whenever this hit 8 — a fixed sentence,
+ * with no model anywhere in the path, presented as machine analysis. That is a
+ * fabricated instrument reading, and this app's rule is that a readout says
+ * what actually happened. Naming the terms makes the score checkable: an
+ * operator can see WHY a headline scored, and disagree with it.
+ */
+export function scoreRisk(text: string): { score: number; matched: string[] } {
   const lower = text.toLowerCase();
-  let score = 1;
-  for (const kw of RISK_KEYWORDS) {
-    if (lower.includes(kw)) score += 2;
-  }
-  return Math.min(10, score);
+  const matched = RISK_KEYWORDS.filter((kw) => lower.includes(kw));
+  return { score: Math.min(10, 1 + matched.length * 2), matched };
 }
 
 function findCoords(text: string): [number, number] | null {
@@ -138,7 +146,7 @@ export async function GET() {
     }
 
     const newsItems = allArticles.map(article => {
-      const riskScore = scoreRisk(article.description || article.title);
+      const { score: riskScore, matched } = scoreRisk(article.description || article.title);
       const coords = findCoords(article.description || article.title);
 
       return {
@@ -151,7 +159,12 @@ export async function GET() {
         risk_score: riskScore,
         coords: coords ? [coords[0], coords[1]] : null,
         coords_default: !coords,
-        machine_assessment: riskScore >= 8 ? "AI Analysis indicates elevated tactical priority based on OSINT stream patterns." : null,
+        // What the score is actually made of. No model ran, so nothing here
+        // claims one did — the operator sees the terms and can judge the match.
+        machine_assessment: riskScore >= 8
+          ? `Flagged on ${matched.length} risk terms: ${matched.slice(0, 6).join(', ')}${matched.length > 6 ? '…' : ''}.`
+          : null,
+        risk_terms: matched,
       };
     });
 

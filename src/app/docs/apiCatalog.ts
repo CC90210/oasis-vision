@@ -266,7 +266,7 @@ export const API_GROUPS: ApiGroup[] = [
       {
         path: '/api/news',
         method: 'GET',
-        summary: 'Aggregated OSINT news items.',
+        summary: 'Aggregated open-source news items.',
         returns: ['news', 'total', 'timestamp'],
       },
       {
@@ -401,7 +401,7 @@ export const API_GROUPS: ApiGroup[] = [
   },
   {
     id: 'osint',
-    title: 'OSINT Toolkit',
+    title: 'Recon Toolkit',
     blurb:
       'The lookup tools behind the RECON panel. Every route takes a single subject and returns a normalised result, so they compose well in scripts.',
     endpoints: [

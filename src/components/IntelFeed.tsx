@@ -128,7 +128,10 @@ export default function IntelFeed({ data, onLocate }: IntelFeedProps) {
                       {item.title}
                     </h4>
 
-                    {/* Machine Assessment (if critical) */}
+                    {/* Why this headline was flagged — the risk terms that
+                        matched, not a machine's opinion. The API used to send a
+                        canned "AI Analysis indicates…" sentence here with no
+                        model in the path; it now sends the terms themselves. */}
                     {item.machine_assessment && (
                       <div className="mt-1.5 flex items-start gap-1.5 bg-red-950/20 border border-red-900/20 rounded px-2 py-1">
                         <Zap className="w-2.5 h-2.5 text-red-400 flex-shrink-0 mt-0.5" />

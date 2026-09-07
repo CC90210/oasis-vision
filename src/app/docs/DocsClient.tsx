@@ -269,7 +269,7 @@ export default function DocsClient() {
             </h1>
 
             <p className="text-[15px] leading-[1.75] text-[var(--text-secondary)] max-w-[42rem]">
-              OASIS VISION aggregates aviation, maritime, seismic, conflict, cyber, and OSINT feeds onto a single
+              OASIS VISION aggregates aviation, maritime, seismic, conflict, cyber and reconnaissance feeds onto a single
               GPU-rendered map — and exposes every one of them as a plain HTTP endpoint. This is the same API the
               dashboard runs on. There is no separate, privileged internal tier.
             </p>
@@ -360,7 +360,7 @@ print(len(data["commercial_flights"]), "commercial")`,
 # { "stats": { "flights": 9241, "sats": 2043, "cctv": 2117,
 #              "weather": 58, "nuclear": 191, "incidents": 412 },
 #   "timestamp": "2026-07-29T12:00:00Z" }`}</Pre>
-            <p>The OSINT lookups each take one subject, so they compose cleanly in a pipeline:</p>
+            <p>The recon lookups each take one subject, so they compose cleanly in a pipeline:</p>
             <Pre label="Passive subdomain enumeration" lang="bash">{`curl -s "${origin}/api/osint/certs?domain=example.com" | jq -r '.subdomains[]'`}</Pre>
             <Callout tone="info" title="Try before you write code">
               Every GET endpoint in the reference below has a <strong>Send request</strong> button that runs it against
@@ -408,7 +408,7 @@ docker compose up -d`}</Pre>
                 },
                 {
                   k: 'OSIRIS_TELEGRAM_CHANNELS',
-                  v: 'Comma-separated public Telegram channel names (no @) for the Telegram OSINT layer, overriding the curated default set.',
+                  v: 'Comma-separated public Telegram channel names (no @) for the Telegram intel layer, overriding the curated default set.',
                 },
                 {
                   k: 'OSIRIS_PORT',
@@ -543,7 +543,7 @@ docker compose up -d`}</Pre>
             </div>
             <Callout tone="warn" title="Responsible use">
               The RECON scanner and <Code>/api/osint/sweep</Code> generate traffic against the targets you name. Only
-              point them at infrastructure you own or have written authorisation to test. The remaining OSINT routes
+              point them at infrastructure you own or have written authorisation to test. The remaining recon routes
               are passive and query third-party datasets rather than the subject itself.
             </Callout>
           </Section>
