@@ -117,7 +117,11 @@ describe('buildOverpass', () => {
   it('is a syntactically closed query with the point and radius bound in', () => {
     const q = buildOverpass(45.5, -73.5, 1200);
     expect(q).toMatch(/^\[out:json\]\[timeout:25\];\(/);
-    expect(q).toMatch(/\);out center tags 120;$/);
+    // The trailing number caps the WHOLE union, not each selector. It was 120,
+    // and Times Square returned 119 — a ceiling being read as a measurement.
+    expect(q).toMatch(/\);out center tags \d+;$/);
+    const cap = Number(q.match(/out center tags (\d+);$/)![1]);
+    expect(cap).toBeGreaterThanOrEqual(500);
     expect(q).toContain('(around:1200,45.5,-73.5)');
     // Balanced parens — an unbalanced query is a 400 from Overpass, which the
     // route would surface as "infrastructure unavailable" forever.

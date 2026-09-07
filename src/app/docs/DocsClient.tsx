@@ -371,7 +371,7 @@ print(len(data["commercial_flights"]), "commercial")`,
           <Section id="self-hosting" eyebrow="Guide" title="Self-Hosting">
             <p>OASIS VISION needs Node 20+ and no database. A local instance is three commands:</p>
             <Pre label="Local development" lang="bash">{`git clone https://github.com/CC90210/oasis-vision.git
-cd osiris
+cd oasis-vision
 npm install
 npm run dev        # http://localhost:3000`}</Pre>
             <p>For a production build, or to run the checks:</p>

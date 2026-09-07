@@ -144,6 +144,12 @@ export default function Dashboard() {
   const [locationLabel, setLocationLabel] = useState('');
   const [regionDossier, setRegionDossier] = useState<any>(null);
   const [dossierLoading, setDossierLoading] = useState(false);
+  /* Why the last assessment failed, and the point it was for. A failure used to
+     leave both of the above null, so the panel simply vanished — see
+     handleRightClick. The coordinate is kept so RETRY re-runs the same point
+     rather than wherever the map has drifted to since. */
+  const [dossierError, setDossierError] = useState<string | null>(null);
+  const lastAssessedPoint = useRef<{ lat: number; lng: number } | null>(null);
   const [showSplash, setShowSplash] = useState(true);
   const [activeCamera, setActiveCamera] = useState<any>(null);
   const [spaceWeather, setSpaceWeather] = useState<any>(null);
@@ -449,11 +455,24 @@ export default function Dashboard() {
 
   // Region dossier (right-click)
   const handleRightClick = useCallback(async (coords: { lat: number; lng: number }) => {
-    setDossierLoading(true); setRegionDossier(null);
+    lastAssessedPoint.current = coords;
+    setDossierLoading(true); setRegionDossier(null); setDossierError(null);
     try {
       const res = await fetch(`/api/region-dossier?lat=${coords.lat}&lng=${coords.lng}`);
-      if (res.ok) setRegionDossier(await res.json());
-    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); } finally { setDossierLoading(false); }
+      if (res.ok) {
+        setRegionDossier(await res.json());
+      } else {
+        /* A non-2xx used to fall through to the `finally` with the dossier still
+           null, so the panel disappeared without a word after the operator had
+           watched ASSESSING… for up to 45 seconds — identical, from the chair,
+           to having mis-clicked. The route answers with {error}; say it. */
+        const body = await res.json().catch(() => null);
+        setDossierError(body?.error || `Assessment failed — the server returned HTTP ${res.status}.`);
+      }
+    } catch (e) {
+      // Timeout or dropped connection. Same silent-vanish problem, same fix.
+      setDossierError(e instanceof Error ? e.message : 'Assessment could not reach the server.');
+    } finally { setDossierLoading(false); }
   }, []);
   // Entity click handler (hoisted from JSX to comply with Rules of Hooks - Fixes #113)
   const handleEntityClick = useCallback((entity: any) => {
@@ -527,7 +546,9 @@ export default function Dashboard() {
 
   const handleExportGeoJSON = useCallback(() => {
     downloadFile(
-      `osiris-aoi-${new Date().toISOString().slice(0, 10)}.geojson`,
+      // Named for the current brand: this file lands in the operator's Downloads
+      // folder and gets emailed on, and it carried the previous owner's name.
+      `oasis-vision-aoi-${new Date().toISOString().slice(0, 10)}.geojson`,
       JSON.stringify(shapesToGeoJSON(drawnPolygons), null, 2),
       'application/geo+json',
     );
@@ -1763,25 +1784,59 @@ export default function Dashboard() {
       {/* Scale bar is now integrated into the map controls section above */}
 
       {/* ── Area Assessment ── */}
-      {(regionDossier || dossierLoading) && (
+      {(regionDossier || dossierLoading || dossierError) && (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           className="absolute top-16 md:top-20 left-2 md:left-1/2 md:-translate-x-1/2 z-[300]"
         >
-          <AreaAssessment
-            data={regionDossier}
-            loading={dossierLoading}
-            onClose={() => { setRegionDossier(null); setDossierLoading(false); }}
-            cameras={data.cameras}
-            aircraft={[
-              ...(data.commercial_flights || []),
-              ...(data.military_flights || []),
-              ...(data.private_flights || []),
-              ...(data.private_jets || []),
-            ]}
-            onFocus={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })}
-          />
+          {dossierError ? (
+            /* AreaAssessment renders nothing without data, so the failure gets
+               its own panel in the same slot: what went wrong, at which point,
+               and a way back in that does not require guessing the coordinate. */
+            <div className="glass-panel p-3 w-[340px] max-w-[92vw]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="hud-text text-[10px] text-[var(--gold-primary)]">AREA ASSESSMENT</span>
+                <button
+                  onClick={() => setDossierError(null)}
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  title="Dismiss"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="flex items-start gap-2 text-[10px] text-[var(--accent-weather)] leading-relaxed">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                <span>{dossierError}</span>
+              </div>
+              {lastAssessedPoint.current && (
+                <div className="text-[9px] text-[var(--text-muted)] mt-1.5 tabular-nums">
+                  {lastAssessedPoint.current.lat.toFixed(5)}, {lastAssessedPoint.current.lng.toFixed(5)}
+                </div>
+              )}
+              <button
+                onClick={() => { const p = lastAssessedPoint.current; if (p) handleRightClick(p); }}
+                disabled={!lastAssessedPoint.current}
+                className="mt-3 px-2.5 py-1.5 rounded bg-[var(--gold-primary)]/15 hover:bg-[var(--gold-primary)]/25 disabled:opacity-40 disabled:cursor-not-allowed border border-[var(--gold-primary)]/40 transition-colors hud-text text-[9px] text-[var(--gold-primary)]"
+              >
+                RETRY
+              </button>
+            </div>
+          ) : (
+            <AreaAssessment
+              data={regionDossier}
+              loading={dossierLoading}
+              onClose={() => { setRegionDossier(null); setDossierLoading(false); setDossierError(null); }}
+              cameras={data.cameras}
+              aircraft={[
+                ...(data.commercial_flights || []),
+                ...(data.military_flights || []),
+                ...(data.private_flights || []),
+                ...(data.private_jets || []),
+              ]}
+              onFocus={(lat, lng) => setFlyToLocation({ lat, lng, ts: Date.now() })}
+            />
+          )}
         </motion.div>
       )}
 

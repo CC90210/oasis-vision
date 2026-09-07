@@ -162,6 +162,19 @@ const INFRA_SELECTORS: string[] = [
   '["name"]["historic"]',
 ];
 
+/**
+ * Element cap on the Overpass query, and the reason it is not just "high".
+ *
+ * The trailing number in `out center tags N` limits the WHOLE union of all 14
+ * selectors, not each one. It was 120 — and the Times Square assessment came
+ * back with total 119, which was not a measurement of Times Square but the
+ * query hitting its ceiling. Those counts were printed AND spoken as facts.
+ *
+ * 800 clears the densest real city block by a wide margin, and reaching it is
+ * now reported rather than silently passed off as complete: see `truncated`.
+ */
+const OVERPASS_LIMIT = 800;
+
 export interface InfraItem { category: string; name: string; kind: string; lat: number; lng: number }
 
 interface OverpassElement {
@@ -173,7 +186,7 @@ interface OverpassElement {
 
 export function buildOverpass(lat: number, lng: number, radius: number): string {
   const parts = INFRA_SELECTORS.map((sel) => `nwr${sel}(around:${radius},${lat},${lng});`);
-  return `[out:json][timeout:25];(${parts.join('')});out center tags 120;`;
+  return `[out:json][timeout:25];(${parts.join('')});out center tags ${OVERPASS_LIMIT};`;
 }
 
 /** Which of our categories an OSM element belongs to, or null for a landmark. */
@@ -230,7 +243,26 @@ async function fetchInfrastructure(lat: number, lng: number, radius: number, dea
         await res.body?.cancel().catch(() => {});
         continue;
       }
-      body = await res.json();
+      const parsed = await res.json();
+
+      /**
+       * Overpass answers a SERVER-SIDE timeout with HTTP 200, an empty
+       * `elements` array, and a `remark` explaining what went wrong. Taking the
+       * 200 at face value meant a busy Overpass produced "Nothing of note is
+       * mapped within 1.2 kilometres" — printed on screen and spoken aloud as a
+       * finding about the ground, when in truth the query never ran.
+       *
+       * Absence reported as zero, again, and this one reached the operator's
+       * ears. A remark means this mirror failed: move to the next one, and if
+       * they all remark, throw so the caller records it in `degraded`.
+       */
+      if (parsed && typeof parsed.remark === 'string' && parsed.remark.trim()) {
+        lastError = `remark: ${parsed.remark.trim().slice(0, 120)}`;
+        console.warn('[OASIS] Overpass remark from', mirror, '-', parsed.remark.trim().slice(0, 200));
+        continue;
+      }
+
+      body = parsed;
       break;
     } catch (e) {
       lastError = e instanceof Error ? e.message : 'failed';
@@ -239,6 +271,13 @@ async function fetchInfrastructure(lat: number, lng: number, radius: number, dea
   // Every mirror failing is reported, never swallowed: an empty result and an
   // unreachable service look identical on screen and mean opposite things.
   if (!body) throw new Error(`Overpass unavailable (${lastError})`);
+
+  /**
+   * Did the query hit its ceiling? If so the counts below are a floor, not a
+   * measurement, and every consumer has to say so rather than present a
+   * truncation artifact as the complete picture.
+   */
+  const truncated = ((body.elements || []) as unknown[]).length >= OVERPASS_LIMIT;
 
   const items: InfraItem[] = [];
   const seen = new Set<string>();
@@ -261,7 +300,7 @@ async function fetchInfrastructure(lat: number, lng: number, radius: number, dea
       lng: el.lon ?? el.center?.lon ?? lng,
     });
   }
-  return items;
+  return { items, truncated };
 }
 
 /* ───────────────────────── Open-Meteo: observed conditions ────────────────── */
@@ -514,7 +553,7 @@ export async function GET(request: Request) {
     }
 
     const counts: Record<string, number> = {};
-    for (const it of infrastructure || []) counts[it.category] = (counts[it.category] || 0) + 1;
+    for (const it of infrastructure?.items || []) counts[it.category] = (counts[it.category] || 0) + 1;
 
     return NextResponse.json(
       {
@@ -523,7 +562,14 @@ export async function GET(request: Request) {
         place,
         conditions: condR.status === 'fulfilled' ? condR.value : null,
         infrastructure: infrastructure
-          ? { counts, items: infrastructure.slice(0, 60), total: infrastructure.length }
+          ? {
+              counts,
+              items: infrastructure.items.slice(0, 60),
+              total: infrastructure.items.length,
+              // True when Overpass hit its element cap: `total` and every entry
+              // in `counts` are then a lower bound, not a count.
+              truncated: infrastructure.truncated,
+            }
           : null,
         nearby,
         wikipedia,

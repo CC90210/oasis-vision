@@ -97,7 +97,9 @@ export async function GET(req: Request) {
     const res = await safeFetch(url, {
       signal: AbortSignal.timeout(10_000),
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; OSIRIS/1.0; +https://github.com/simplifaisoul/osiris)',
+        // Identifies THIS app. It advertised the upstream fork's repo, so any
+        // camera host that rate-limited or blocked us was blocking them.
+        'User-Agent': 'Mozilla/5.0 (compatible; OASIS-VISION/1.0; +https://github.com/CC90210/oasis-vision)',
         Accept: 'text/html,application/xhtml+xml',
       },
     });

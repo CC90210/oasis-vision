@@ -1,9 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Every <loc> must sit on the same host this file is served from, or search
+  engines drop the sitemap entirely. Keep in sync with SITE_URL in
+  src/app/layout.tsx.
+-->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://osirisai.live/</loc>
-    <lastmod>2026-05-13</lastmod>
+    <loc>https://oasisai.work/</loc>
+    <lastmod>2026-09-07</lastmod>
     <changefreq>hourly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://oasisai.work/docs</loc>
+    <lastmod>2026-09-07</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>

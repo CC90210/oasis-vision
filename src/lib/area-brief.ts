@@ -43,6 +43,12 @@ export interface BriefInfra {
   counts?: Record<string, number>;
   items?: { category: string; name: string; kind: string }[];
   total?: number;
+  /**
+   * Overpass hit its element cap, so every count here is a LOWER BOUND. The
+   * query used to cap at 120 and Times Square came back with 119 — a ceiling
+   * read as a measurement, and then spoken aloud as one.
+   */
+  truncated?: boolean;
 }
 
 export interface BriefInput {
@@ -103,8 +109,26 @@ function joinList(items: string[]): string {
 }
 
 /** Where we are — the sentence the old dossier could never produce. */
-function placeSentence(p: BriefPlace | null | undefined, lat: number, lng: number): string {
+function placeSentence(
+  p: BriefPlace | null | undefined,
+  lat: number,
+  lng: number,
+  degradedPlace: boolean,
+): string {
   if (!p || !p.name || p.name === 'Unknown location') {
+    /**
+     * A DEAD reverse geocode and an UNNAMED coordinate produce the same empty
+     * place object, and they mean opposite things. This used to speak both as
+     * "No named place is recorded at this coordinate" — asserting, out loud and
+     * as a finding, that nothing is there, when in fact the lookup had failed.
+     *
+     * The third instance of absence-reported-as-zero found in this module, and
+     * the module's own header comment forbids it. The route already knows which
+     * happened; it just was not being asked.
+     */
+    if (degradedPlace) {
+      return `Assessing ${speakCoordinates(lat, lng)}. The location lookup failed, so this point is unidentified — that is not the same as it being empty.`;
+    }
     return `Assessing ${speakCoordinates(lat, lng)}. No named place is recorded at this coordinate.`;
   }
   // Levels the headline already names are dropped, or the sentence stutters:
@@ -145,7 +169,13 @@ function infraSentence(infra: BriefInfra | null | undefined, radius: number, deg
   }
   if (!phrases.length) return `Nothing of note is mapped within ${km} kilometres.`;
 
-  let out = `Within ${km} kilometres: ${joinList(phrases)}.`;
+  // "at least", not a flat count, when the query hit its ceiling — the numbers
+  // are then a floor and stating them plainly would overstate what was measured.
+  const lead = infra.truncated ? `Within ${km} kilometres, at least` : `Within ${km} kilometres:`;
+  let out = `${lead} ${joinList(phrases)}.`;
+  if (infra.truncated) {
+    out += ' The area is dense enough that the survey hit its cap, so those are minimums.';
+  }
 
   // Name the specific ones an operator would want called out by name.
   const notable = (infra?.items || [])
@@ -226,7 +256,7 @@ export function buildAreaBrief(input: BriefInput): { speech: string; lines: stri
   const failed = (what: string) => degraded.some((d) => d.startsWith(what));
 
   const lines = [
-    placeSentence(input.place, lat, lng),
+    placeSentence(input.place, lat, lng, failed('place')),
     infraSentence(input.infrastructure, radius, failed('infrastructure')),
     conditionsSentence(input.conditions, failed('conditions')),
     coverageSentence(input),

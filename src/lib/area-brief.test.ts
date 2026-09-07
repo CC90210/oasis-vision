@@ -101,6 +101,26 @@ describe('buildAreaBrief', () => {
     expect(speech).toContain('two government or diplomatic sites');
   });
 
+  /**
+   * A dead reverse geocode and a genuinely unnamed coordinate produce the same
+   * empty place object and mean opposite things. Both were spoken as "No named
+   * place is recorded" — stating, as a finding, that nothing is there when the
+   * lookup had simply failed. Third instance of absence-as-zero in this module.
+   */
+  it('distinguishes a failed location lookup from an unnamed coordinate', () => {
+    const dead = buildAreaBrief({
+      ...base,
+      place: { name: 'Unknown location' },
+      degraded: ['place (Nominatim HTTP 503)'],
+    });
+    expect(dead.speech).toContain('location lookup failed');
+    expect(dead.speech).not.toContain('No named place is recorded');
+
+    const empty = buildAreaBrief({ ...base, place: { name: 'Unknown location' }, degraded: [] });
+    expect(empty.speech).toContain('No named place is recorded');
+    expect(empty.speech).not.toContain('location lookup failed');
+  });
+
   it('handles open ocean, where no name exists', () => {
     const { speech } = buildAreaBrief({
       coordinates: { lat: -30.5, lng: -140.25 },

@@ -3,7 +3,8 @@ services:
   osiris:
     # Builds locally from the Dockerfile so you always run the cloned code.
     # To use the prebuilt image instead, replace the `build:` block below with
-    # `image: ghcr.io/simplifaisoul/osiris:latest`.
+    # No image is published for this fork — this compose file builds from
+    # source. Do not substitute the upstream image: it is a different app.
     build:
       context: .
       dockerfile: Dockerfile
@@ -66,25 +67,24 @@ x-casaos:
     - amd64
     - arm64
   main: osiris
-  author: simplifaisoul
-  developer: simplifaisoul
+  author: OASIS AI
+  developer: OASIS AI
   category: Network
   description:
     en_us: >-
-      OSIRIS is a production-grade open-source OSINT situational-awareness
-      dashboard. It aggregates real-time global intelligence across aviation,
-      maritime, CCTV networks, seismic activity, wildfires, news feeds,
-      weather, space weather, cyber threats (CVEs) and conflict zones into a
-      single GPU-accelerated MapLibre interface. Most features work with no
-      API keys.
+      OASIS VISION is a global reconnaissance and situational-awareness
+      map. It aggregates live aviation, maritime, CCTV, seismic, wildfire,
+      news, weather, space-weather, cyber-threat and conflict feeds into a
+      single GPU-accelerated MapLibre interface, and can assess any coordinate
+      on demand. Most features work with no API keys.
   tagline:
-    en_us: Real-time global OSINT intelligence dashboard
+    en_us: Real-time global reconnaissance and intelligence map
   title:
-    en_us: OSIRIS
-  icon: https://raw.githubusercontent.com/simplifaisoul/osiris/master/public/casaos-icon.png
-  thumbnail: https://raw.githubusercontent.com/simplifaisoul/osiris/master/public/og-image.png
+    en_us: OASIS VISION
+  icon: https://raw.githubusercontent.com/CC90210/oasis-vision/main/public/casaos-icon.png
+  thumbnail: https://raw.githubusercontent.com/CC90210/oasis-vision/main/public/og-image.png
   screenshot_link:
-    - https://raw.githubusercontent.com/simplifaisoul/osiris/master/public/og-image.png
+    - https://raw.githubusercontent.com/CC90210/oasis-vision/main/public/og-image.png
   scheme: http
   hostname: ""
   port_map: "3000"

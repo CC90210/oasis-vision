@@ -1,5 +1,8 @@
-# Osiris Global Intelligence Platform
-# https://osirisai.live
+# OASIS VISION — OASIS AI
+# https://oasisai.work
+#
+# The Sitemap host below must match SITE_URL in src/app/layout.tsx. A sitemap
+# announced on a different host than it lives on is silently ignored.
 
 User-agent: *
 Allow: /
@@ -11,7 +14,7 @@ Disallow: /api/osint/*
 Allow: /api/health
 
 # Sitemap
-Sitemap: https://osirisai.live/sitemap.xml
+Sitemap: https://oasisai.work/sitemap.xml
 
 # Crawl-delay for respectful indexing
 Crawl-delay: 10

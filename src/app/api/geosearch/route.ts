@@ -157,6 +157,76 @@ async function searchNominatim(q: string): Promise<GeoResult[]> {
   return (Array.isArray(json) ? json : []).map(normalizeNominatim).filter((r): r is GeoResult => r !== null);
 }
 
+interface LadderOutcome {
+  results: GeoResult[];
+  /**
+   * Every provider threw — nobody actually answered. Not the same thing as an
+   * empty result, which means the providers answered and held no match.
+   */
+  degraded: boolean;
+}
+
+/**
+ * Run the query ladder, reporting WHY it came back empty.
+ *
+ * Both providers, then the reduction fallback only if that found nothing. See
+ * lib/geo-query.ts: an address typed with English street words returns zero
+ * from BOTH engines when OSM holds the street in French, and the two tokens the
+ * operator added to be more precise are exactly what empty the result set.
+ *
+ * `optional` resolves a failed provider to null, so null means "errored" and []
+ * means "answered, no match" — the distinction the caller needs and the one
+ * that used to be thrown away.
+ */
+async function searchLadder(q: string, lat?: number, lng?: number): Promise<LadderOutcome> {
+  for (const attempt of queryLadder(q)) {
+    const [photon, nominatim] = await Promise.all([
+      optional(searchPhoton(attempt, lat, lng)),
+      optional(searchNominatim(attempt)),
+    ]);
+
+    // Reducing the query cannot repair a transport failure, and trying anyway
+    // spends a second pair of 8s timeouts — enough to push the request past
+    // maxDuration, so the operator gets an opaque platform error instead of the
+    // "search is down" signal below.
+    if (photon === null && nominatim === null) return { results: [], degraded: true };
+
+    const merged = mergeResults(photon || [], nominatim || []);
+    if (merged.length) return { results: merged, degraded: false };
+  }
+  return { results: [], degraded: false };
+}
+
+/**
+ * Cache keys whose last completed search was degraded.
+ *
+ * cachedSource dedups concurrent misses: a second request for the same query is
+ * handed the first one's promise and its own fetcher never runs. During an
+ * outage that is the normal case rather than a corner — every provider call is
+ * sitting on an 8s timeout, so an operator who retries lands inside the first
+ * search — and without this the retry would get exactly the 200-with-no-results
+ * answer this whole change exists to remove. Read only after the shared promise
+ * resolves, so the entry is always the one that resolution wrote.
+ */
+const degradedKeys = new Set<string>();
+
+/** Keys are query text, so this would otherwise grow without bound. */
+const MAX_DEGRADED_KEYS = 200;
+
+function recordOutcome(key: string, degraded: boolean): void {
+  if (!degraded) {
+    degradedKeys.delete(key);
+    return;
+  }
+  degradedKeys.add(key);
+  // Set preserves insertion order, so the oldest key evicts first.
+  while (degradedKeys.size > MAX_DEGRADED_KEYS) {
+    const oldest = degradedKeys.values().next().value;
+    if (oldest === undefined) break;
+    degradedKeys.delete(oldest);
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);

@@ -4,6 +4,21 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Share2, Copy, Check, Link2, X, Globe, MapPin } from 'lucide-react';
 
+// The text that leaves this app and lands on someone else's timeline. It used
+// to read "OSIRIS — Open Source Global Intelligence Platform": the previous
+// owner's brand, plus the "open source intelligence" identity the operator had
+// already had removed everywhere else. Every tap of X or REDDIT published it.
+// Worded to match the twitter/openGraph titles in src/app/layout.tsx so a
+// shared link and its link preview say the same thing. Those live in
+// layout.tsx as module-local consts on a server component, so they can't be
+// imported into this client component — keep the two in sync by hand.
+const SHARE_TITLE = 'OASIS VISION — Global Intelligence & Reconnaissance';
+// Only reached during server render, before window exists. The old value
+// pointed at osiris.vercel.app, so the link shown in the panel — and copied by
+// anyone who hit the button before hydration — carried the retired domain.
+// Matches SITE_URL / metadataBase in src/app/layout.tsx.
+const SHARE_ORIGIN_FALLBACK = 'https://oasisai.work';
+
 interface SharePanelProps {
   mapView: { zoom: number; latitude: number; longitude?: number };
   activeLayers: Record<string, boolean>;
@@ -29,7 +44,7 @@ export default function SharePanel({ mapView, activeLayers, mouseCoords }: Share
       .join(',');
     if (layerKeys) params.set('layers', layerKeys);
 
-    const base = typeof window !== 'undefined' ? window.location.origin : 'https://osiris.vercel.app';
+    const base = typeof window !== 'undefined' ? window.location.origin : SHARE_ORIGIN_FALLBACK;
     return `${base}/?${params.toString()}`;
   }, [mapView, activeLayers, mouseCoords]);
 
@@ -131,7 +146,7 @@ export default function SharePanel({ mapView, activeLayers, mouseCoords }: Share
             {/* Quick Share */}
             <div className="flex gap-2">
               <a
-                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent('🏛️ OSIRIS — Global Intelligence Dashboard')}&url=${encodeURIComponent(generateShareUrl())}`}
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(`🛰️ ${SHARE_TITLE}`)}&url=${encodeURIComponent(generateShareUrl())}`}
                 target="_blank"
                 className="flex-1 text-center py-1.5 rounded text-[9px] font-mono tracking-wider text-[var(--text-muted)] border border-[var(--border-primary)] hover:border-[#1DA1F2] hover:text-[#1DA1F2] transition-colors"
               >
@@ -145,7 +160,7 @@ export default function SharePanel({ mapView, activeLayers, mouseCoords }: Share
                 IN SHARE
               </a>
               <a
-                href={`https://reddit.com/submit?url=${encodeURIComponent(generateShareUrl())}&title=${encodeURIComponent('OSIRIS — Open Source Global Intelligence Platform')}`}
+                href={`https://reddit.com/submit?url=${encodeURIComponent(generateShareUrl())}&title=${encodeURIComponent(SHARE_TITLE)}`}
                 target="_blank"
                 className="flex-1 text-center py-1.5 rounded text-[9px] font-mono tracking-wider text-[var(--text-muted)] border border-[var(--border-primary)] hover:border-[#FF4500] hover:text-[#FF4500] transition-colors"
               >

@@ -41,6 +41,8 @@ export interface AssessmentData {
     counts?: Record<string, number>;
     items?: { category: string; name: string; kind: string; lat: number; lng: number }[];
     total?: number;
+    /** Overpass hit its cap: the counts are a lower bound, not a measurement. */
+    truncated?: boolean;
   } | null;
   nearby?: { title: string; distanceM: number }[];
   wikipedia?: { title?: string; extract?: string; thumbnail?: string } | null;
@@ -341,7 +343,14 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
 
           {Object.keys(counts).length > 0 && (
             <div className="mb-3">
-              <div className="hud-label mb-1">WITHIN {(radius / 1000).toFixed(radius % 1000 === 0 ? 0 : 1)} KM</div>
+              <div className="hud-label mb-1">
+                WITHIN {(radius / 1000).toFixed(radius % 1000 === 0 ? 0 : 1)} KM
+                {data.infrastructure?.truncated && (
+                  <span className="text-[var(--accent-weather)] ml-1" title="Overpass returned its maximum number of elements, so these are lower bounds rather than counts">
+                    · AT LEAST
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-4 gap-1">
                 {CATEGORY_ORDER.filter((c) => counts[c]).map((c) => (
                   <div key={c} className="glass-panel-sm px-1 py-1 text-center">
