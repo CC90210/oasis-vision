@@ -668,15 +668,42 @@ export async function GET(request: Request) {
 
     const allCameras: any[] = [];
     const sources: Record<string, number> = {};
+    /** Regions whose fetch threw — asked for, never answered. */
+    const failed: string[] = [];
+    /** Regions that answered with nothing at all. */
+    const empty: string[] = [];
 
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        for (const cam of result.value) {
-          allCameras.push(cam);
-          sources[cam.source] = (sources[cam.source] || 0) + 1;
-        }
+    /**
+     * The rejected branch used to be dropped on the floor.
+     *
+     * `Promise.allSettled` was used and only `fulfilled` was ever read, so a
+     * region whose fetch threw contributed nothing and was never mentioned
+     * anywhere in the response. A dead source and a region with no cameras
+     * produced byte-identical output: same `total`, same absent key in
+     * `sources`. That is the whole of "the cameras aren't loading for specific
+     * places" being impossible to diagnose — the API could not say which
+     * source had died, so every investigation started from scratch.
+     *
+     * Note the ceiling on how much this can help: most source modules catch
+     * their own errors and `return []`, so they arrive here as FULFILLED and
+     * empty rather than rejected. `empty` exists to catch those too — a region
+     * that returns zero cameras is not proof of a fault, but it is the first
+     * thing worth looking at, and it was previously invisible.
+     */
+    results.forEach((result, i) => {
+      const region = regionsToFetch[i];
+      if (result.status === 'rejected') {
+        const why = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        failed.push(`${region} (${why.slice(0, 80)})`);
+        console.warn('[OASIS] CCTV region failed:', region, '-', why.slice(0, 200));
+        return;
       }
-    }
+      if (!result.value.length) empty.push(region);
+      for (const cam of result.value) {
+        allCameras.push(cam);
+        sources[cam.source] = (sources[cam.source] || 0) + 1;
+      }
+    });
 
     const cacheControl = allCameras.length < 50 
       ? 'no-store, max-age=0' 
@@ -687,6 +714,10 @@ export async function GET(request: Request) {
       total: allCameras.length,
       sources,
       regions: regionsToFetch,
+      // Named, not swallowed: `total` is a count of what ANSWERED, and without
+      // these two a caller cannot tell that from a count of what EXISTS.
+      failed,
+      empty,
       timestamp: new Date().toISOString(),
     }, {
       headers: { 'Cache-Control': cacheControl },

@@ -82,6 +82,32 @@ describe('buildAreaBrief', () => {
     expect(speech).not.toContain('Nothing of note is mapped');
   });
 
+  /**
+   * The query used to cap at 120 elements and Times Square came back with 119 —
+   * a ceiling read as a measurement, printed AND spoken as one. With the cap
+   * raised the same point returns 520. When the cap IS reached the numbers are
+   * a floor, and the sentence has to say so rather than assert a count.
+   */
+  it('speaks a truncated survey as a floor, not a count', () => {
+    const { speech } = buildAreaBrief({
+      ...base,
+      infrastructure: { counts: { emergency: 2, landmark: 5 }, items: [], total: 800, truncated: true },
+    });
+    expect(speech).toContain('at least');
+    expect(speech).toContain('minimums');
+    expect(speech).not.toMatch(/Within 1\.2 kilometres: /);
+  });
+
+  it('states a complete survey plainly, with no hedging', () => {
+    const { speech } = buildAreaBrief({
+      ...base,
+      infrastructure: { ...base.infrastructure, truncated: false },
+    });
+    expect(speech).toContain('Within 1.2 kilometres:');
+    expect(speech).not.toContain('at least');
+    expect(speech).not.toContain('minimums');
+  });
+
   it('says degrees Celsius, because a spoken "21 degrees" is ambiguous', () => {
     expect(buildAreaBrief(base).speech).toContain('21 degrees Celsius');
   });
