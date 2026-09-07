@@ -89,7 +89,11 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
   // from the answer so it can never offer a voice the server would reject.
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/voice')
+    // Aborted, not just flagged: the flag stopped the state update but left the
+    // request running, so StrictMode's double-invoke fired two voice/quota
+    // lookups on every mount.
+    const controller = new AbortController();
+    fetch('/api/voice', { signal: controller.signal })
       .then((r) => r.json())
       .then((j) => {
         if (cancelled) return;
@@ -99,8 +103,13 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
         const preferred = (j.voices || []).find((v: VoiceOption) => v.name === 'Alice');
         setVoiceId(preferred?.id || j.voices?.[0]?.id || '');
       })
-      .catch(() => { if (!cancelled) setVoiceError('Voice service unreachable.'); });
-    return () => { cancelled = true; };
+      .catch((e) => {
+        // An abort is this effect cleaning up, not a service failure.
+        if (!cancelled && !(e instanceof DOMException && e.name === 'AbortError')) {
+          setVoiceError('Voice service unreachable.');
+        }
+      });
+    return () => { cancelled = true; controller.abort(); };
   }, []);
 
   // One audio element for the panel's lifetime, and every object URL revoked.
@@ -111,6 +120,9 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
     audioRef.current?.pause();
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
   }, []);
+
+  /** Identifies "a different assessment"; used by the silencing effect below. */
+  const assessmentKey = data ? `${data.coordinates.lat},${data.coordinates.lng}` : null;
 
   const radius = data?.radius ?? 1200;
 
@@ -151,9 +163,32 @@ export default function AreaAssessment({ data, loading, onClose, cameras, aircra
     abortRef.current?.abort();
     abortRef.current = null;
     const audio = audioRef.current;
-    if (audio) { audio.pause(); audio.currentTime = 0; }
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+      // Release the MP3 rather than holding it for the panel's lifetime. It was
+      // only revoked on unmount or on the NEXT successful synthesis, so a
+      // stopped briefing stayed resident until one of those happened.
+      audio.removeAttribute('src');
+      audio.load();
+    }
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
     setSpeaking(false);
   }, []);
+
+  /**
+   * A new assessment silences the previous one.
+   *
+   * The panel is NOT unmounted between assessments — the parent keeps it up
+   * while the next dossier loads — so the unmount cleanup never ran, and
+   * assessing a second point left the FIRST location's briefing talking over
+   * the new one's loading state. Keyed on the coordinate, which is what
+   * actually identifies a different assessment.
+   */
+  useEffect(() => { stop(); }, [assessmentKey, stop]);
 
   const speak = useCallback(async () => {
     if (!brief?.speech) return;

@@ -19,8 +19,37 @@ describe('reduceAddress', () => {
   });
 
   it('handles French street types, since the home city is Montreal', () => {
+    // "Est" is KEPT. Sainte-Catherine Est and Sainte-Catherine Ouest are
+    // different streets kilometres apart, and OSM stores the French form — so
+    // the qualifier is what matches, not what blocks the match. This asserted
+    // "4529 Sainte-Catherine Montreal" until an audit pointed out that dropping
+    // it sends the operator to the wrong end of the street.
     expect(reduceAddress('4529 Rue Sainte-Catherine Est Montreal'))
-      .toBe('4529 Sainte-Catherine Montreal');
+      .toBe('4529 Sainte-Catherine Est Montreal');
+  });
+
+  it('keeps a French qualifier while still dropping the French street type', () => {
+    expect(reduceAddress('4100 Rue Sherbrooke Ouest Suite 100 Montreal'))
+      .toBe('4100 Sherbrooke Ouest Montreal');
+  });
+
+  /**
+   * The reduction must never invent a DIFFERENT place. Each of these was
+   * measured producing a wrong query before the adjacency rules landed —
+   * reported by an independent audit on 2026-09-07 and reproduced exactly.
+   *
+   * A wrong result is worse than no result: an empty search tells the operator
+   * to rephrase, while a confident hit on the wrong street does not.
+   */
+  it.each([
+    ['11 West Street New York', 'was "11 New York" — the street erased'],
+    ['100 North Road Burnaby', 'was "100 Burnaby" — the street erased'],
+    ['Avenue Road Toronto Ontario', 'was "Toronto Ontario" — "Avenue Road" IS the name'],
+    ['West Street New York', 'was "West New York" — a different town, in New Jersey'],
+    ['Bureau en Gros Montreal', 'was "en Gros Montreal" — a shop name, not a suite marker'],
+    ['No 1 Poultry London', 'was "Poultry London" — a London landmark'],
+  ])('declines to reduce %s (%s)', (query) => {
+    expect(reduceAddress(query)).toBeNull();
   });
 
   /**

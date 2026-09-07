@@ -82,7 +82,7 @@ export function speakCoordinates(lat: number, lng: number): string {
 const CATEGORY_ORDER: [string, string, string][] = [
   ['emergency', 'emergency service', 'emergency services'],
   ['security', 'restricted or military site', 'restricted or military sites'],
-  ['government', 'government or diplomatic site', 'government and diplomatic sites'],
+  ['government', 'government or diplomatic site', 'government or diplomatic sites'],
   ['transport', 'transport hub', 'transport hubs'],
   ['power', 'power facility', 'power facilities'],
   ['medical', 'medical facility', 'medical facilities'],
@@ -121,7 +121,20 @@ function placeSentence(p: BriefPlace | null | undefined, lat: number, lng: numbe
 
 function infraSentence(infra: BriefInfra | null | undefined, radius: number, degradedInfra: boolean): string {
   if (degradedInfra) return 'Infrastructure data is unavailable for this area right now.';
-  const counts = infra?.counts || {};
+
+  /**
+   * No object at all is UNKNOWN, not zero.
+   *
+   * This used to fall through to "Nothing of note is mapped" whenever
+   * `infrastructure` was null and `degraded` happened not to name it — the
+   * caller's two failure signals had to agree for the sentence to be true. That
+   * is exactly the absent-is-not-zero defect this module exists to avoid, and
+   * it was in the module itself. An empty `counts` object still means zero,
+   * because the query ran and came back with nothing.
+   */
+  if (!infra || !infra.counts) return 'Infrastructure data is unavailable for this area right now.';
+
+  const counts = infra.counts;
   const km = (radius / 1000).toFixed(radius % 1000 === 0 ? 0 : 1);
 
   const phrases: string[] = [];
@@ -149,7 +162,9 @@ function conditionsSentence(c: BriefConditions | null | undefined, degradedCond:
   const bits: string[] = [];
 
   if (typeof c.tempC === 'number') {
-    let t = `${Math.round(c.tempC)} degrees`;
+    // Open-Meteo returns Celsius. "21 degrees" spoken aloud is heard as
+    // Fahrenheit by half the world, so the unit is said out loud.
+    let t = `${Math.round(c.tempC)} degrees Celsius`;
     if (typeof c.feelsC === 'number' && Math.abs(c.feelsC - c.tempC) >= 3) {
       t += `, feeling like ${Math.round(c.feelsC)}`;
     }
@@ -159,7 +174,7 @@ function conditionsSentence(c: BriefConditions | null | undefined, degradedCond:
     let w = `wind ${Math.round(c.windKph)} kilometres per hour`;
     if (typeof c.windDir === 'number') w += ` from the ${compass(c.windDir)}`;
     if (typeof c.gustKph === 'number' && c.gustKph >= c.windKph + 15) {
-      w += `, gusting ${Math.round(c.gustKph)}`;
+      w += `, gusting ${Math.round(c.gustKph)} kilometres per hour`;
     }
     bits.push(w);
   }

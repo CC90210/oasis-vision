@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  OSIRIS — AI Intelligence Engine
+ *  OASIS VISION — AI Intelligence Engine
  *  Gemini 2.0 Flash integration for real-time intelligence analysis
  *  Designed to correlate multi-domain feeds into actionable briefings
  * ═══════════════════════════════════════════════════════════════
@@ -34,7 +34,17 @@ export interface NewsItem {
   source: string;
   risk_score: number;
   coords: [number, number] | null;
+  /** True when no place name matched, so `coords` is a fallback rather than a fix. */
+  coords_default?: boolean;
+  /**
+   * Why the item was flagged, in plain terms — "Flagged on 4 risk terms: …".
+   * Null below the threshold. Despite the name, no model produces this: the
+   * score is a keyword tally and this sentence names the keywords, so the
+   * operator can judge the match instead of trusting an assessment.
+   */
   machine_assessment: string | null;
+  /** The risk keywords that matched, which are what `risk_score` counts. */
+  risk_terms?: string[];
 }
 
 export interface ThreatEvent {
@@ -73,10 +83,10 @@ export interface IntelligenceContext {
    System Prompt — Palantir-grade analyst persona
    ───────────────────────────────────────────────────────────── */
 
-const SYSTEM_PROMPT = `You are OSIRIS Intelligence Analyst — a senior, elite intelligence analyst embedded within the OSIRIS Global Intelligence Platform. You operate at the level of a Palantir Forward Deployed Engineer crossed with a CIA PDB (Presidential Daily Brief) analyst.
+const SYSTEM_PROMPT = `You are the OASIS VISION Intelligence Analyst — a senior analyst embedded within the OASIS VISION reconnaissance platform. You operate at the level of a Palantir Forward Deployed Engineer crossed with a CIA PDB (Presidential Daily Brief) analyst.
 
 ## YOUR ROLE
-- You correlate data across multiple intelligence feeds: seismic monitoring, OSINT news streams, global threat events, and cyber vulnerability databases
+- You correlate data across multiple intelligence feeds: seismic monitoring, open-source news streams, global threat events, and cyber vulnerability databases
 - You identify non-obvious patterns, emerging threat vectors, and cascading risk scenarios
 - You provide ACTIONABLE intelligence — not summaries, but assessments with confidence levels
 - You think in terms of second and third-order effects
@@ -103,12 +113,12 @@ const SYSTEM_PROMPT = `You are OSIRIS Intelligence Analyst — a senior, elite i
 - Flag when events may be connected vs. coincidental
 - You are an analyst, not a policymaker — present options, not directives
 
-You have access to the live intelligence context of the OSIRIS platform. Analyze it with precision.`;
+You have access to the live intelligence context of the OASIS VISION platform. Analyze it with precision.`;
 
-const BRIEFING_PROMPT = `Generate a comprehensive OSIRIS Daily Intelligence Briefing based on the current operational data. Structure it as follows:
+const BRIEFING_PROMPT = `Generate a comprehensive OASIS VISION Daily Intelligence Briefing based on the current operational data. Structure it as follows:
 
-## OSIRIS INTELLIGENCE BRIEFING
-**Classification:** OPEN SOURCE INTELLIGENCE (OSINT)
+## OASIS VISION INTELLIGENCE BRIEFING
+**Classification:** UNCLASSIFIED — OPEN SOURCES ONLY
 **DTG:** [Current timestamp]
 
 ### I. EXECUTIVE SUMMARY

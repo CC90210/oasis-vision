@@ -85,18 +85,42 @@ export async function POST(request: Request) {
           // unperformed. The defaults are tuned for expressive narration.
           voice_settings: { stability: 0.55, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true },
         }),
-        signal: AbortSignal.timeout(40000),
+        /**
+         * The browser's abort is bridged through to ElevenLabs, not just to
+         * this handler. Characters are billed per synthesis, so when the
+         * operator presses STOP mid-request the upstream call has to actually
+         * stop — otherwise the client hangs up, the server carries on, and the
+         * quota is spent on audio nobody will ever hear.
+         */
+        signal: AbortSignal.any([request.signal, AbortSignal.timeout(40000)]),
       },
     );
 
     if (!res.ok) {
-      // Pass the upstream reason through. A generic "voice failed" hides the
-      // one thing the operator needs to know — usually that the plan's
-      // character quota for the month is spent.
-      const detail = await res.text().catch(() => '');
-      console.error('[OASIS] ElevenLabs error', res.status, detail.slice(0, 300));
+      /**
+       * The upstream body is NOT passed through, and that is deliberate.
+       *
+       * It used to be: `detail: detail.slice(0, 400)` straight from ElevenLabs,
+       * plus 300 characters of it into the server log. An independent audit
+       * flagged it on 2026-09-07, and the reasoning holds — an upstream error
+       * body is attacker- and vendor-controlled text that this route has no
+       * contract over. The day any gateway in that path echoes request
+       * diagnostics, `xi-api-key` reaches the browser and the log, and the one
+       * hard invariant of this file is gone. That the current body happens not
+       * to contain it is not a guarantee anybody here controls.
+       *
+       * The operator still gets the fact that matters, mapped from the status.
+       */
+      await res.body?.cancel().catch(() => {});
+      console.error('[OASIS] ElevenLabs error, status', res.status);
+      const reason =
+        res.status === 401 ? 'Voice credentials were rejected. Check ELEVENLABS_API_KEY.'
+        : res.status === 429 ? 'Voice quota or rate limit reached. Check the character balance on the plan.'
+        : res.status === 422 ? 'The voice service rejected that text or voice selection.'
+        : res.status >= 500 ? 'The voice service is unavailable right now.'
+        : `The voice service refused the request (status ${res.status}).`;
       return NextResponse.json(
-        { error: `Voice service returned ${res.status}`, detail: detail.slice(0, 400) },
+        { error: reason, status: res.status },
         { status: res.status === 401 ? 502 : res.status },
       );
     }

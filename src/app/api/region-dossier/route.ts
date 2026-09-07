@@ -41,6 +41,33 @@ const UA = { 'User-Agent': 'OasisVision/1.0 (+https://oasisai.work)' };
 const DEFAULT_RADIUS = 1200;
 const MAX_RADIUS = 5000;
 
+/**
+ * A route-level budget, shared by every upstream call.
+ *
+ * The per-call timeouts alone did not bound the route. An independent audit
+ * added them up on 2026-09-07: the reverse geocode runs FIRST (9s), then the
+ * parallel block waits on the slowest member — three Overpass mirrors at 12s
+ * each is 36s — and only then does the Wikipedia summary run (6s). 9 + 36 + 6
+ * is 51s against a declared `maxDuration = 45`. My own earlier arithmetic only
+ * checked that the mirrors fit, and missed both serial phases around them.
+ *
+ * Tuning the individual numbers would fix today's arrangement and rot the next
+ * time a source is added. A deadline cannot: each call gets the smaller of its
+ * own preference and whatever time is actually left, so the route stays inside
+ * its budget however the phases are rearranged.
+ *
+ * 38s leaves headroom under 45 for JSON parsing and serialisation.
+ */
+const BUDGET_MS = 38_000;
+
+/** Signal that expires at the sooner of this call's preference and the deadline. */
+function budgeted(deadline: number, preferredMs: number): AbortSignal {
+  const left = deadline - Date.now();
+  // Never zero or negative: an already-expired signal throws synchronously
+  // rather than failing the one source cleanly into `degraded`.
+  return AbortSignal.timeout(Math.max(250, Math.min(preferredMs, left)));
+}
+
 export interface PlaceIdentity {
   name: string;
   road?: string;
@@ -179,7 +206,7 @@ const OVERPASS_MIRRORS = [
   'https://overpass.private.coffee/api/interpreter',
 ];
 
-async function fetchInfrastructure(lat: number, lng: number, radius: number) {
+async function fetchInfrastructure(lat: number, lng: number, radius: number, deadline: number) {
   const query = 'data=' + encodeURIComponent(buildOverpass(lat, lng, radius));
 
   let body: { elements?: Record<string, never>[] } | null = null;
@@ -194,9 +221,15 @@ async function fetchInfrastructure(lat: number, lng: number, radius: number) {
         // this route's 45s budget. At 20s each a point over open ocean — where
         // every mirror runs the query to completion and returns nothing —
         // exceeded maxDuration and the whole assessment was killed.
-        signal: AbortSignal.timeout(12000),
+        signal: budgeted(deadline, 12000),
       });
-      if (!res.ok) { lastError = `HTTP ${res.status}`; continue; }
+      if (!res.ok) {
+        lastError = `HTTP ${res.status}`;
+        // Overpass sends a body with its 429s and 504s. Left unread it holds
+        // the connection open, and this loop moves straight to the next mirror.
+        await res.body?.cancel().catch(() => {});
+        continue;
+      }
       body = await res.json();
       break;
     } catch (e) {
@@ -246,13 +279,13 @@ export interface Conditions {
   observedAt: string | null;
 }
 
-async function fetchConditions(lat: number, lng: number): Promise<Conditions> {
+async function fetchConditions(lat: number, lng: number, deadline: number): Promise<Conditions> {
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
     '&current=temperature_2m,apparent_temperature,precipitation,cloud_cover,' +
     'wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day&hourly=visibility' +
     '&forecast_days=1&wind_speed_unit=kmh&timezone=auto';
-  const res = await fetch(url, { headers: UA, signal: AbortSignal.timeout(8000) });
+  const res = await fetch(url, { headers: UA, signal: budgeted(deadline, 8000) });
   if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
   const b = await res.json();
   const c = b.current || {};
@@ -312,7 +345,7 @@ export function rankArticles<T extends { title: string; distanceM: number }>(
   return [...articles].sort((a, b) => score(a) - score(b) || a.distanceM - b.distanceM);
 }
 
-async function fetchNearbyArticles(lat: number, lng: number, radius: number) {
+async function fetchNearbyArticles(lat: number, lng: number, radius: number, deadline: number) {
   const url =
     'https://en.wikipedia.org/w/api.php?action=query&list=geosearch' +
     `&gscoord=${lat}%7C${lng}&gsradius=${Math.min(Math.max(radius, 500), 10000)}` +
@@ -321,7 +354,7 @@ async function fetchNearbyArticles(lat: number, lng: number, radius: number) {
     // theatre, a photograph and a mural, so the article "Times Square" itself was
     // cut before ranking ever saw it. Fetch a wide set, rank, then show five.
     '&gslimit=20&format=json&origin=*';
-  const res = await fetch(url, { headers: UA, signal: AbortSignal.timeout(8000) });
+  const res = await fetch(url, { headers: UA, signal: budgeted(deadline, 8000) });
   if (!res.ok) throw new Error(`Wikipedia geosearch HTTP ${res.status}`);
   const b = await res.json();
   return (b.query?.geosearch || []).map((g: Record<string, number | string>) => ({
@@ -330,10 +363,10 @@ async function fetchNearbyArticles(lat: number, lng: number, radius: number) {
   }));
 }
 
-async function fetchSummary(title: string) {
+async function fetchSummary(title: string, deadline: number) {
   const res = await fetch(
     `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
-    { headers: UA, signal: AbortSignal.timeout(6000) },
+    { headers: UA, signal: budgeted(deadline, 6000) },
   );
   if (!res.ok) throw new Error(`Wikipedia summary HTTP ${res.status}`);
   const w = await res.json();
@@ -342,7 +375,7 @@ async function fetchSummary(title: string) {
 
 /* ───────────────────────── Wikidata: country background ───────────────────── */
 
-async function fetchCountry(countryName: string) {
+async function fetchCountry(countryName: string, deadline: number) {
   const safe = countryName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const sparql = `SELECT ?population ?areaVal ?capitalLabel ?regionLabel ?flagUrl
     (GROUP_CONCAT(DISTINCT ?langLabel; separator=", ") AS ?languages)
@@ -362,7 +395,7 @@ async function fetchCountry(countryName: string) {
 
   const res = await fetch(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`, {
     headers: { ...UA, Accept: 'application/json' },
-    signal: AbortSignal.timeout(9000),
+    signal: budgeted(deadline, 9000),
   });
   if (!res.ok) throw new Error(`Wikidata HTTP ${res.status}`);
   const wd = await res.json();
@@ -394,6 +427,18 @@ export async function GET(request: Request) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return NextResponse.json({ error: 'lat and lng are required' }, { status: 400 });
   }
+  // Finite is not the same as on Earth. `lat=999&lng=999` used to pass, fan out
+  // to all five upstreams, and come back as a page of degraded noise instead of
+  // one clean 400 — wasting somebody else's rate limit to say nothing.
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return NextResponse.json(
+      { error: 'lat must be between -90 and 90, lng between -180 and 180' },
+      { status: 400 },
+    );
+  }
+
+  // Every upstream call shares this; see BUDGET_MS.
+  const deadline = Date.now() + BUDGET_MS;
 
   /** Sources that failed, named, so the UI can say "unknown" not "none". */
   const degraded: string[] = [];
@@ -409,7 +454,7 @@ export async function GET(request: Request) {
         // verbatim to an English text-to-speech voice, which mangles it. The
         // interface language is English; the read-out has to be too.
         `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1&accept-language=en`,
-        { headers: UA, signal: AbortSignal.timeout(9000) },
+        { headers: UA, signal: budgeted(deadline, 9000) },
       );
       if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
       const g = await res.json();
@@ -432,10 +477,10 @@ export async function GET(request: Request) {
     }
 
     const [infraR, condR, nearbyR, countryR] = await Promise.allSettled([
-      fetchInfrastructure(lat, lng, radius),
-      fetchConditions(lat, lng),
-      fetchNearbyArticles(lat, lng, radius),
-      place.country ? fetchCountry(place.country) : Promise.resolve(null),
+      fetchInfrastructure(lat, lng, radius, deadline),
+      fetchConditions(lat, lng, deadline),
+      fetchNearbyArticles(lat, lng, radius, deadline),
+      place.country ? fetchCountry(place.country, deadline) : Promise.resolve(null),
     ]);
 
     if (infraR.status === 'rejected') degraded.push(`infrastructure (${infraR.reason?.message || 'failed'})`);
@@ -462,7 +507,7 @@ export async function GET(request: Request) {
     let wikipedia = null;
     if (nearby.length) {
       try {
-        wikipedia = await fetchSummary(nearby[0].title);
+        wikipedia = await fetchSummary(nearby[0].title, deadline);
       } catch (e) {
         degraded.push(`brief (${e instanceof Error ? e.message : 'failed'})`);
       }

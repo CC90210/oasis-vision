@@ -70,6 +70,37 @@ describe('buildAreaBrief', () => {
     expect(speech).toContain('Nothing of note is mapped within 1.2 kilometres');
   });
 
+  /**
+   * Absent is not zero — and this module had the defect it exists to prevent.
+   * A null `infrastructure` with nothing in `degraded` used to be spoken as
+   * "Nothing of note is mapped": the caller's two failure signals had to agree
+   * for the sentence to be true. Found by an independent audit 2026-09-07.
+   */
+  it('speaks a missing infrastructure object as unknown, not as zero', () => {
+    const { speech } = buildAreaBrief({ ...base, infrastructure: null, degraded: [] });
+    expect(speech).toContain('Infrastructure data is unavailable');
+    expect(speech).not.toContain('Nothing of note is mapped');
+  });
+
+  it('says degrees Celsius, because a spoken "21 degrees" is ambiguous', () => {
+    expect(buildAreaBrief(base).speech).toContain('21 degrees Celsius');
+  });
+
+  it('gives gusts their unit', () => {
+    const gusty = buildAreaBrief({ ...base, conditions: { ...base.conditions, windKph: 20, gustKph: 55 } });
+    expect(gusty.speech).toContain('gusting 55 kilometres per hour');
+  });
+
+  it('does not claim both kinds exist in the government plural', () => {
+    // "two government and diplomatic sites" asserts one of each; two townhalls
+    // are neither.
+    const { speech } = buildAreaBrief({
+      ...base,
+      infrastructure: { counts: { government: 2 }, items: [], total: 2 },
+    });
+    expect(speech).toContain('two government or diplomatic sites');
+  });
+
   it('handles open ocean, where no name exists', () => {
     const { speech } = buildAreaBrief({
       coordinates: { lat: -30.5, lng: -140.25 },
