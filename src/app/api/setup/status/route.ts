@@ -3,21 +3,62 @@ import { NextResponse } from 'next/server';
 /**
  * OASIS VISION — which providers are configured, and nothing else.
  *
- * The God's Eye View client asks this so its panels can say why a layer is
- * unavailable instead of failing silently.
+ * The vendored God's Eye View client (public/globe, built from
+ * keySetupCore.mjs / keySetup.js) renders its POWER UP chip and dialog
+ * ENTIRELY from this response — it never asks a second endpoint and it
+ * never has its own copy of the registry. The shape below is not a house
+ * envelope; it is the exact object `keySetupStatus()` produces upstream and
+ * `render()`/`buildRow()` destructure downstream:
  *
- * This route reports PRESENCE ONLY. It never returns, logs or hints at a value.
- * Their own /api/setup/keys, which writes keys from a browser form to disk, is
- * deliberately not implemented here: it is fine on localhost and wrong the
- * moment --lan or Tailscale is used, both of which OASIS supports.
+ *   { keys: [{ id, title, unlocks, getUrl, envVars[], tier, clientExposed,
+ *              set }], setCount, total }
+ *
+ * `buildRow` does `for (const envVar of key.envVars)` with no guard, and
+ * `main.js` awaits `initKeySetup()` with no catch — so any other
+ * shape (the previous `{id, label, configured}` + `{writable,
+ * writableReason}` house envelope) throws an unhandled TypeError and leaves
+ * the chip frozen on its last rendered label, which defaults to "POWERED
+ * UP" — the UI asserting the opposite of the truth on a zero-key install.
+ *
+ * This route reports PRESENCE ONLY. It never returns, logs or hints at a
+ * value. Their own /api/setup/keys, which writes keys from a browser form to
+ * disk, is deliberately not implemented here: it is fine on localhost and
+ * wrong the moment --lan or Tailscale is used, both of which OASIS supports.
+ * The vendored client has no field in this contract that says "saving is
+ * unavailable" (checked: neither keySetupCore.mjs nor keySetup.js reads any
+ * such flag) — a POST there is simply answered 405 by Next.js, the panel's
+ * existing `if (!response.ok || !payload.ok)` branch reports "Save failed
+ * (405)." to the user, and no credential is ever accepted or written.
  */
 
 export const dynamic = 'force-dynamic';
 
 export interface KeyStatus {
   id: string;
-  label: string;
-  configured: boolean;
+  title: string;
+  unlocks: string;
+  getUrl: string;
+  envVars: string[];
+  tier: 'metered' | 'free';
+  clientExposed: boolean;
+  set: boolean;
+}
+
+interface ProviderDef {
+  id: string;
+  title: string;
+  unlocks: string;
+  getUrl: string;
+  env: string[];
+  tier: 'metered' | 'free';
+  /**
+   * True only for the two providers whose token is baked into the browser
+   * bundle at public/globe/assets/*.js by design (Cesium ion + Google Maps
+   * both need the token client-side to draw 3D tiles). Every other provider
+   * here is proxied server-side by this app's own /api/* routes and the key
+   * never reaches the browser.
+   */
+  clientExposed?: boolean;
 }
 
 /**
@@ -33,37 +74,92 @@ export interface KeyStatus {
  * performs the same OAuth grant `src/app/api/flights/route.ts:259-286` uses,
  * so the claim below is true.
  */
-const PROVIDERS: Array<{ id: string; label: string; env: string[] }> = [
-  { id: 'cesium-ion', label: 'Cesium ion (photorealistic 3D)', env: ['CESIUM_ION_TOKEN'] },
-  { id: 'google-maps', label: 'Google Maps (3D tiles, places, geocoding)', env: ['GOOGLE_MAPS_API_KEY'] },
-  { id: 'openai', label: 'OpenAI (voice control)', env: ['OPENAI_API_KEY'] },
-  { id: 'firms', label: 'NASA FIRMS (active fires)', env: ['FIRMS_API_KEY'] },
-  { id: 'tomtom', label: 'TomTom (live traffic flow)', env: ['TOMTOM_API_KEY'] },
+const PROVIDERS: ProviderDef[] = [
+  {
+    id: 'cesium-ion',
+    title: 'CESIUM ION',
+    unlocks: 'Photorealistic 3D terrain + imagery',
+    getUrl: 'https://ion.cesium.com/tokens',
+    env: ['CESIUM_ION_TOKEN'],
+    tier: 'free',
+    clientExposed: true,
+  },
+  {
+    id: 'google-maps',
+    title: 'GOOGLE MAPS',
+    unlocks: '3D tiles, place search, and geocoding',
+    getUrl: 'https://developers.google.com/maps/documentation/tile/get-api-key',
+    env: ['GOOGLE_MAPS_API_KEY'],
+    tier: 'metered',
+    clientExposed: true,
+  },
+  {
+    id: 'openai',
+    title: 'OPENAI',
+    unlocks: 'Voice control — talk to the planet',
+    getUrl: 'https://platform.openai.com/api-keys',
+    env: ['OPENAI_API_KEY'],
+    tier: 'metered',
+  },
+  {
+    id: 'firms',
+    title: 'NASA FIRMS',
+    unlocks: 'Live active-fire detections',
+    getUrl: 'https://firms.modaps.eosdis.nasa.gov/api/map_key/',
+    env: ['FIRMS_API_KEY'],
+    tier: 'free',
+  },
+  {
+    id: 'tomtom',
+    title: 'TOMTOM',
+    unlocks: 'Real live traffic (keyless runs a simulation)',
+    getUrl: 'https://developer.tomtom.com',
+    env: ['TOMTOM_API_KEY'],
+    tier: 'free',
+  },
   {
     id: 'opensky',
-    label: 'OpenSky (higher flight rate limits — needs BOTH id and secret)',
+    title: 'OPENSKY',
+    unlocks: 'Higher flight-polling rate limits — needs BOTH id and secret',
+    getUrl: 'https://opensky-network.org',
     env: ['OPENSKY_CLIENT_ID', 'OPENSKY_CLIENT_SECRET'],
+    tier: 'free',
   },
-  { id: 'launch-library', label: 'Launch Library 2 (higher launch rate limits)', env: ['LL2_API_TOKEN'] },
-  { id: 'ais', label: 'aisstream.io (live vessels)', env: ['AIS_API_KEY'] },
+  {
+    id: 'launch-library',
+    title: 'LAUNCH LIBRARY',
+    unlocks: 'Higher space-launch request allowance',
+    getUrl: 'https://thespacedevs.com',
+    env: ['LL2_API_TOKEN'],
+    tier: 'free',
+  },
+  {
+    id: 'ais',
+    title: 'AISSTREAM',
+    unlocks: 'Live vessel tracking, worldwide',
+    getUrl: 'https://aisstream.io',
+    env: ['AIS_API_KEY'],
+    tier: 'free',
+  },
 ];
 
 /** Pure, and exported so a test can prove no value ever escapes. */
 export function describeKeys(env: Record<string, string | undefined>): KeyStatus[] {
-  return PROVIDERS.map(({ id, label, env: names }) => ({
+  return PROVIDERS.map(({ id, title, unlocks, getUrl, env: names, tier, clientExposed }) => ({
     id,
-    label,
-    configured: names.every(name => Boolean(env[name]?.trim())),
+    title,
+    unlocks,
+    getUrl,
+    envVars: [...names],
+    tier,
+    clientExposed: Boolean(clientExposed),
+    set: names.every(name => Boolean(env[name]?.trim())),
   }));
 }
 
 export async function GET() {
   const keys = describeKeys(process.env as Record<string, string | undefined>);
-  console.log(`[OSIRIS] setup/status — ${keys.filter(k => k.configured).length}/${keys.length} providers configured`);
-  return NextResponse.json({
-    keys,
-    // Their panel offers to save keys. Tell it plainly that it cannot here.
-    writable: false,
-    writableReason: 'Keys are set in the environment file by hand. This app does not accept credentials over HTTP.',
-  });
+  const setCount = keys.filter(k => k.set).length;
+  console.log(`[OSIRIS] setup/status — ${setCount}/${keys.length} providers configured`);
+  return NextResponse.json({ keys, setCount, total: keys.length });
 }
