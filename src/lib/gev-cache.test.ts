@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as fsp from 'node:fs/promises';
-import { cachedJson, clearGevCache, clearGevMemoryOnly } from './gev-cache';
+import { cachedJson, clearGevCache, clearGevMemoryOnly, flushGevWrites } from './gev-cache';
 
 // Real implementation kept aside so the one deliberately-mocked test below can
 // still perform the actual disk operation once it releases its gate — every
@@ -65,9 +65,14 @@ describe('cachedJson', () => {
   // cross-route cache leak, since seven later route tasks each pick their
   // own key strings. Force both through the disk tier (clearGevMemoryOnly)
   // so this actually proves the disk file, not memory, is distinct.
+  //
+  // flushGevWrites() is needed before clearGevMemoryOnly(): round 2 (R15)
+  // restored fire-and-forget writes, so cachedJson resolving no longer
+  // implies the write has landed on disk — see flushGevWrites's own comment.
   it('keeps disk entries distinct for keys that sanitize to the same filename', async () => {
     await cachedJson({ key: 'region:a/b', ttlMs: -1, fetcher: async () => ({ tag: 'first' }) });
     await cachedJson({ key: 'region:a:b', ttlMs: -1, fetcher: async () => ({ tag: 'second' }) });
+    await flushGevWrites();
     clearGevMemoryOnly();
 
     const a = await cachedJson({
@@ -88,8 +93,11 @@ describe('cachedJson', () => {
   // uses clearGevMemoryOnly to force cachedJson past the memory tier
   // deliberately, so the disk-fallback path — the one that makes serve-stale
   // survive a process restart — genuinely runs.
+  //
+  // flushGevWrites() first: see the comment on the previous test.
   it('serves a disk-only entry as stale once the memory tier is cleared', async () => {
     await cachedJson({ key: 'k6', ttlMs: 10_000, fetcher: async () => ({ n: 42 }) });
+    await flushGevWrites();
     clearGevMemoryOnly();
 
     const r = await cachedJson({
@@ -106,6 +114,7 @@ describe('cachedJson', () => {
   // entry immediately "too old" to serve.
   it('refuses an expired disk entry rather than serving it as a stale fallback', async () => {
     await cachedJson({ key: 'k7', ttlMs: 10_000, diskTtlMs: -1, fetcher: async () => ({ n: 1 }) });
+    await flushGevWrites();
     clearGevMemoryOnly();
 
     await expect(cachedJson({
@@ -159,6 +168,98 @@ describe('cachedJson', () => {
       key: 'k8', ttlMs: 10_000,
       fetcher: async () => { throw new Error('nothing should have survived the clear'); },
     })).rejects.toThrow('nothing should have survived the clear');
+
+    mkdirSpy.mockRestore();
+  });
+
+  // Fix round 2 / RULING R15: round 1's drain took a single Promise.allSettled
+  // snapshot of pendingWrites once, up front. A write that STARTS during that
+  // await — after the snapshot, before rm() — was never in it and slipped
+  // through untouched: the re-reviewer's probe (write A in flight, clear
+  // snapshots {A}, write B starts, A releases, rm() fires, B lands after)
+  // came back served from disk as 'stale'. The fix raises clearBarrier
+  // synchronously (before clearGevCache's first await) and has
+  // trackedWriteDisk refuse any write started while it is up, so nothing new
+  // can ever join the set being drained.
+  //
+  // This reproduces that exact probe: A is gated in flight when the clear is
+  // issued; B is started while the clear is actively waiting on A (barrier
+  // up, drain loop mid-flight); A is then released. Neither key's data may
+  // be found on disk afterward — A because the clear waited for it and then
+  // removed it, B because the barrier must have refused it outright.
+  it('refuses a write that starts while a clear is already draining, so it cannot slip past the barrier', async () => {
+    const realMkdir = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).mkdir;
+    let releaseA!: () => void;
+    let releaseB!: () => void;
+    const gateA = new Promise<void>((resolve) => { releaseA = resolve; });
+    const gateB = new Promise<void>((resolve) => { releaseB = resolve; });
+    // Two independently-gated mkdir calls, consumed in call order: A's write
+    // reaches the first, B's write (if it is ever allowed to start touching
+    // disk at all) reaches the second. Without gating B separately too, its
+    // real disk write can race to completion before the clear's rm() runs
+    // and get swept away "by accident" — passing the test even against
+    // broken code for the wrong reason, which is exactly the trap this
+    // round's R16 exists to catch.
+    const mkdirSpy = vi
+      .spyOn(fsp, 'mkdir')
+      .mockImplementationOnce(async (...args: Parameters<typeof realMkdir>) => {
+        await gateA;
+        return realMkdir(...args);
+      })
+      .mockImplementationOnce(async (...args: Parameters<typeof realMkdir>) => {
+        await gateB;
+        return realMkdir(...args);
+      });
+
+    const writeA = cachedJson({ key: 'kA', ttlMs: 10_000, fetcher: async () => ({ n: 1 }) });
+    // Let A's fetch settle and its write register (blocked on the mocked
+    // mkdir) before the clear is issued.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Issue the clear. With the barrier fix, clearBarrier goes up
+    // synchronously, before this call returns control, so it is already in
+    // effect for the very next line. Without the fix (see the fix report's
+    // deliberately-broken run), this instead takes a one-shot snapshot of
+    // pendingWrites containing only A.
+    const clearPromise = clearGevCache();
+
+    // Start B's write WHILE the clear is actively draining A (A has not been
+    // released yet). Its own fetch succeeds — cachedJson must still serve it
+    // normally — but with the barrier up, its disk write must never even
+    // reach the mocked mkdir (trackedWriteDisk should no-op it outright).
+    const writeB = cachedJson({ key: 'kB', ttlMs: 10_000, fetcher: async () => ({ n: 2 }) });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    releaseA();
+    await clearPromise;
+    await writeA;
+    const bResult = await writeB;
+    expect(bResult.data).toEqual({ n: 2 }); // cachedJson itself still works during the barrier
+
+    // Let B's write proceed if it was ever gated (broken code only — fixed
+    // code never touched the second mkdir call at all), then wait for
+    // anything still tracked to actually land before checking disk.
+    releaseB();
+    await flushGevWrites();
+
+    // B's own cachedJson call set its mem entry AFTER clearGevCache's
+    // mem.clear() already ran (B started once the clear was already in
+    // flight), so it would otherwise still be sitting in memory here and
+    // mask whatever did or didn't reach disk. Clear memory only so both
+    // checks below can only be answered by the disk tier.
+    clearGevMemoryOnly();
+
+    await expect(cachedJson({
+      key: 'kA', ttlMs: 10_000,
+      fetcher: async () => { throw new Error('A should not have survived the clear'); },
+    })).rejects.toThrow('A should not have survived the clear');
+
+    await expect(cachedJson({
+      key: 'kB', ttlMs: 10_000,
+      fetcher: async () => { throw new Error('B should never have reached disk'); },
+    })).rejects.toThrow('B should never have reached disk');
 
     mkdirSpy.mockRestore();
   });

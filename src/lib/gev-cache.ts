@@ -42,20 +42,25 @@ const mem = new Map<string, Entry<unknown>>();
 const inflight = new Map<string, Promise<unknown>>();
 
 /**
- * Fix round 1 / Finding C: writes to disk used to be fire-and-forget
- * (`void writeDisk(...)`), so `cachedJson` could resolve — and a test could
- * finish `await`ing it — while the mkdir+writeFile were still in progress.
- * `clearGevCache`'s `rm()` could then land BEFORE that write, and the write
- * would finish AFTER, recreating the directory with residue right after a
- * clear: the exact defect R5 exists to close, just moved into a timing
- * window instead of removed. Every write is tracked here from the instant it
- * starts (synchronously, before its first internal await), and
- * `clearGevCache` drains this set before it removes the directory — so an
- * already-started write is always finished-and-reflected-or-discarded before
- * the directory disappears, regardless of whether the caller awaited the
- * `cachedJson` call that triggered it.
+ * Fix round 1 / Finding C, corrected in round 2 (RULING R15): writes to disk
+ * are fire-and-forget from `cachedJson`'s point of view (see the comment on
+ * `trackedWriteDisk`), so one can still be running after `cachedJson`
+ * resolves. `clearGevCache`'s `rm()` must never land while that is true, or
+ * the write finishes afterward and recreates the directory with residue —
+ * the R5 defect moved into a timing window instead of removed.
+ *
+ * Round 1's fix drained this set with a single `Promise.allSettled` snapshot
+ * taken once, up front. That leaves a gap: a write that STARTS during the
+ * drain — after the snapshot was taken, before `rm()` runs — is not in it,
+ * and slips through untouched. `clearBarrier` closes that gap by refusing
+ * new writes outright once a clear has been requested (see
+ * `trackedWriteDisk`), and `clearGevCache` loops on this set's live size
+ * instead of a one-shot snapshot, so it keeps waiting until it is genuinely
+ * empty. With no new entries possible once the barrier is up, that loop is
+ * guaranteed to terminate.
  */
 const pendingWrites = new Set<Promise<void>>();
+let clearBarrier = false;
 
 /**
  * Test-only. Drops both tiers of state: the in-memory maps AND the on-disk
@@ -78,19 +83,26 @@ const pendingWrites = new Set<Promise<void>>();
  * raised, because a cleanup helper failing must not fail the test it is
  * cleaning up for.
  *
- * Fix round 1 / Finding C: drains `pendingWrites` before touching disk, so an
- * already-in-flight write can never lose the race with this removal — see
- * the comment on `pendingWrites` above.
+ * RULING R15 (round 2): raises `clearBarrier` for the duration — synchronously,
+ * before the first `await`, so it is in effect for any write attempted from
+ * the very next tick onward — and loops on `pendingWrites`'s live size
+ * (never a snapshot) until it is empty, before touching disk. See the
+ * comment on `pendingWrites`.
  */
-export function clearGevCache(): Promise<void> {
+export async function clearGevCache(): Promise<void> {
   mem.clear();
   inflight.clear();
-  const drain = pendingWrites.size > 0 ? Promise.allSettled([...pendingWrites]) : Promise.resolve();
-  return drain.then(async () => {
+  clearBarrier = true;
+  try {
+    while (pendingWrites.size > 0) {
+      await Promise.allSettled([...pendingWrites]);
+    }
     await rm(CACHE_DIR, { recursive: true, force: true }).catch((e) => {
       console.warn('[OSIRIS] gev-cache clear: failed to remove disk cache dir:', e instanceof Error ? e.message : e);
     });
-  });
+  } finally {
+    clearBarrier = false;
+  }
 }
 
 /**
@@ -106,6 +118,25 @@ export function clearGevCache(): Promise<void> {
 export function clearGevMemoryOnly(): void {
   mem.clear();
   inflight.clear();
+}
+
+/**
+ * Test-only. Resolves once every disk write registered at the moment of the
+ * call has settled — a plain wait, no barrier, no removal.
+ *
+ * RULING R15 (round 2) restored fire-and-forget writes on the `cachedJson`
+ * response path (see `trackedWriteDisk`), which is correct for production —
+ * seven routes should not each pay disk latency on every fresh fetch for a
+ * race that a barrier already closes — but it means a test can no longer
+ * infer "the write has landed" from "`cachedJson` resolved". A test that
+ * deliberately wants to exercise the disk-fallback path (`clearGevMemoryOnly`
+ * then re-fetch) needs a deterministic way to know the write it just
+ * triggered is actually on disk, rather than guessing with a timer.
+ */
+export async function flushGevWrites(): Promise<void> {
+  while (pendingWrites.size > 0) {
+    await Promise.allSettled([...pendingWrites]);
+  }
 }
 
 const safeKey = (key: string): string => {
@@ -155,8 +186,19 @@ async function performWriteDisk<T>(key: string, entry: Entry<T>): Promise<void> 
  * starts — before `performWriteDisk`'s first internal `await` — so a
  * `clearGevCache()` call that lands on the very next tick still finds it and
  * waits for it. See the comment on `pendingWrites`.
+ *
+ * RULING R15 (round 2): if a clear has already been requested (`clearBarrier`
+ * is up), this refuses to start a new write at all rather than risk racing
+ * the removal — dropping it is safe, since a clear discards disk state on
+ * purpose and the next successful fetch will persist it again if it is still
+ * wanted. This is what makes `clearGevCache`'s drain loop terminate without
+ * needing a snapshot: no write can appear in `pendingWrites` after the
+ * barrier goes up, so the set can only shrink from here.
  */
 function trackedWriteDisk<T>(key: string, entry: Entry<T>): Promise<void> {
+  if (clearBarrier) {
+    return Promise.resolve();
+  }
   const p = performWriteDisk(key, entry);
   pendingWrites.add(p);
   const untrack = () => {
@@ -184,10 +226,12 @@ export async function cachedJson<T>(opts: CacheOptions<T>): Promise<CachedResult
       const data = await fetcher();
       const entry: Entry<T> = { data, fetchedAt: Date.now() };
       mem.set(key, entry as Entry<unknown>);
-      // Awaited (not fire-and-forget, per Finding C): the common case — a
-      // caller that awaits `cachedJson` — should never see disk state that
-      // is still catching up with memory.
-      await trackedWriteDisk(key, entry);
+      // Fire-and-forget (restored in round 2, RULING R15): the barrier in
+      // `trackedWriteDisk`/`clearGevCache` closes the residue race without
+      // making every fresh fetch, across all seven routes that consume
+      // this, pay disk latency on its response path. A test that needs to
+      // know the write has landed uses `flushGevWrites()`.
+      void trackedWriteDisk(key, entry);
       return { data, age: 'fresh', fetchedAt: entry.fetchedAt };
     } catch (e) {
       const fallback = warm ?? (await readDisk<T>(key, diskTtlMs));
