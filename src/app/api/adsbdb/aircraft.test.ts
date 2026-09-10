@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapAircraft, mapCallsignRoute, isValidHexOrReg, isValidCallsign } from './aircraft';
+import { mapAircraft, mapCallsignRoute, isValidHexOrReg, isValidCallsign, lookupAircraft, lookupCallsign } from './aircraft';
 
 // A real trimmed response from https://api.adsbdb.com/v0/aircraft/A835AF
 const aircraftRaw = {
@@ -83,5 +83,17 @@ describe('input validation', () => {
   it('accepts callsigns and rejects path tricks', () => {
     expect(isValidCallsign('UAL123')).toBe(true);
     expect(isValidCallsign('../x')).toBe(false);
+  });
+});
+
+describe('lookupAircraft validation', () => {
+  it('rejects traversal attempts directly', async () => {
+    await expect(lookupAircraft('../../secret')).rejects.toThrow();
+  });
+});
+
+describe('lookupCallsign validation', () => {
+  it('rejects traversal attempts directly', async () => {
+    await expect(lookupCallsign('../evil')).rejects.toThrow();
   });
 });

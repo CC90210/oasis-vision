@@ -102,8 +102,12 @@ async function lookup<T>(path: string, key: string, map: (raw: unknown) => T | n
   return { data: result.data, age: result.age };
 }
 
-export const lookupAircraft = (id: string) =>
-  lookup<AircraftInfo>(`aircraft/${encodeURIComponent(id)}`, `adsbdb-ac-${id}`, mapAircraft);
+export async function lookupAircraft(id: string) {
+  if (!isValidHexOrReg(id)) throw new Error(`Invalid aircraft identifier: ${id}`);
+  return lookup<AircraftInfo>(`aircraft/${encodeURIComponent(id)}`, `adsbdb-ac-${id}`, mapAircraft);
+}
 
-export const lookupCallsign = (callsign: string) =>
-  lookup<CallsignRoute>(`callsign/${encodeURIComponent(callsign)}`, `adsbdb-cs-${callsign}`, mapCallsignRoute);
+export async function lookupCallsign(callsign: string) {
+  if (!isValidCallsign(callsign)) throw new Error(`Invalid callsign: ${callsign}`);
+  return lookup<CallsignRoute>(`callsign/${encodeURIComponent(callsign)}`, `adsbdb-cs-${callsign}`, mapCallsignRoute);
+}
