@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mapAircraft, mapCallsignRoute, isValidHexOrReg, isValidCallsign, lookupAircraft, lookupCallsign } from './aircraft';
 
 // A real trimmed response from https://api.adsbdb.com/v0/aircraft/A835AF
@@ -87,13 +87,33 @@ describe('input validation', () => {
 });
 
 describe('lookupAircraft validation', () => {
-  it('rejects traversal attempts directly', async () => {
-    await expect(lookupAircraft('../../secret')).rejects.toThrow();
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects traversal attempts locally without network access', async () => {
+    await expect(lookupAircraft('../../secret')).rejects.toThrow('Invalid aircraft identifier: ../../secret');
+    // Must not have made any network calls
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
 
 describe('lookupCallsign validation', () => {
-  it('rejects traversal attempts directly', async () => {
-    await expect(lookupCallsign('../evil')).rejects.toThrow();
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects traversal attempts locally without network access', async () => {
+    await expect(lookupCallsign('../evil')).rejects.toThrow('Invalid callsign: ../evil');
+    // Must not have made any network calls
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
