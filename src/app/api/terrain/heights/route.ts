@@ -87,21 +87,33 @@ export async function fetchBatch(points: Point[]): Promise<Array<number | null>>
  * miss discovered during one synchronous pass over the request's points (see
  * `resolveHeights`) lands in the same queue before the first upstream call
  * goes out.
+ *
+ * RULING R20: chunks are awaited one at a time, never fired concurrently.
+ * The whole reason R6 replaced the brief's implementation was courtesy to a
+ * free, keyless, community-run endpoint — a fan-out of up to 8 simultaneous
+ * requests at the 2,000-point cap is the opposite of that, and it is also
+ * the shape that gets an IP quietly rate-limited (which would fail as an
+ * empty terrain layer, not an error). This mirrors how Overpass mirrors are
+ * tried one at a time elsewhere in this codebase. The cost is ~1.4s on a
+ * cold 2,000-point request, once, before the 30-day cache makes it moot.
  */
 function createBatchLoader() {
   type Job = { point: Point; resolve: (v: number | null) => void; reject: (e: unknown) => void };
   let queue: Job[] = [];
   let flushScheduled = false;
 
-  function flush() {
+  async function flush() {
     flushScheduled = false;
     const jobs = queue;
     queue = [];
     for (let i = 0; i < jobs.length; i += UPSTREAM_CHUNK) {
       const slice = jobs.slice(i, i + UPSTREAM_CHUNK);
-      fetchBatch(slice.map((j) => j.point))
-        .then((results) => slice.forEach((j, idx) => j.resolve(results[idx])))
-        .catch((e) => slice.forEach((j) => j.reject(e)));
+      try {
+        const results = await fetchBatch(slice.map((j) => j.point));
+        slice.forEach((j, idx) => j.resolve(results[idx]));
+      } catch (e) {
+        slice.forEach((j) => j.reject(e));
+      }
     }
   }
 

@@ -144,6 +144,57 @@ describe('POST /api/terrain/heights — real batching, order preservation', () =
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  /**
+   * RULING R20: a call-COUNT assertion cannot detect a fan-out — two chunks
+   * fired concurrently still produce exactly 2 calls. This tracks how many
+   * fetch() calls are simultaneously outstanding and asserts that number
+   * never exceeds 1, which only a real `await` between chunks satisfies.
+   */
+  it('awaits each chunk before starting the next, never firing chunks concurrently', async () => {
+    const points = Array.from({ length: 300 }, (_, i) => ({ lng: -170 + i * 0.001, lat: 20 }));
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    const fetchMock = vi.fn().mockImplementation(async (url: string | URL) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 5)); // long enough for a fan-out to overlap
+      const u = new URL(String(url));
+      const raw = u.searchParams.get('points') ?? '';
+      const pts = raw
+        .split(';')
+        .filter(Boolean)
+        .map((s) => {
+          const [lng, lat] = s.split(',').map(Number);
+          return { lng, lat };
+        });
+      inFlight--;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          tileset: 'mapterhorn-egm08',
+          version: '5',
+          results: pts.map((p) => ({
+            lon: p.lng,
+            lat: p.lat,
+            elevation: elevationOf(p.lng, p.lat),
+            geoid: 0,
+            ellipsoid: elevationOf(p.lng, p.lat),
+          })),
+        }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await POST(postRequest(points));
+    const body = await res.json();
+
+    expect(body.heights).toHaveLength(300);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // 300 misses / 256 per call = 2 chunks
+    expect(maxInFlight).toBeLessThanOrEqual(1); // ...but never both in flight at once
+  });
+
   it('returns null (never 0) for a point upstream cannot resolve, and does not cache the failure', async () => {
     const point = { lng: 40, lat: 40 };
 
