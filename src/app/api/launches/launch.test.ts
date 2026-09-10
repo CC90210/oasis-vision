@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { mapLaunch } from './launch';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mapLaunch, fetchLaunches } from './launch';
+import { clearGevCache } from '@/lib/gev-cache';
 
 // A real trimmed record from
 // https://ll.thespacedevs.com/2.3.0/launches/?net__gte=...&mode=detailed
@@ -69,5 +70,56 @@ describe('mapLaunch', () => {
   it('rejects a record with no id', () => {
     expect(mapLaunch(patch({ id: undefined }))).toBeNull();
     expect(mapLaunch(null)).toBeNull();
+  });
+});
+
+/**
+ * A mapper test cannot catch a wrong QUESTION. `ordering=-net` (descending)
+ * across a lower bound with no upper bound returns the 50 furthest-future
+ * TBD launches — a 200 full of well-formed, entirely wrong-decade data. These
+ * assert on the URL fetchLaunches actually builds, not on a mapped fixture.
+ */
+describe('fetchLaunches — query window', () => {
+  beforeEach(async () => {
+    await clearGevCache();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('bounds the query on both ends of the rolling 30-day window', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ results: [] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const before = Date.now();
+    await fetchLaunches();
+    const after = Date.now();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const calledUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    const gte = calledUrl.searchParams.get('net__gte');
+    const lte = calledUrl.searchParams.get('net__lte');
+
+    // The defect this pins: a lower bound with NO upper bound, combined with
+    // descending order, answers from 2029-2039 instead of the last 30 days.
+    expect(lte).not.toBeNull();
+    expect(gte).not.toBeNull();
+
+    const gteMs = Date.parse(gte!);
+    const lteMs = Date.parse(lte!);
+
+    // Upper bound is "now", not the far future.
+    expect(lteMs).toBeGreaterThanOrEqual(before - 1000);
+    expect(lteMs).toBeLessThanOrEqual(after + 1000);
+
+    // Lower bound is ~30 days before the upper bound, not before all time.
+    const spanDays = (lteMs - gteMs) / 86_400_000;
+    expect(spanDays).toBeGreaterThan(29);
+    expect(spanDays).toBeLessThan(31);
   });
 });

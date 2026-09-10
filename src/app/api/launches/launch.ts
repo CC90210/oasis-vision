@@ -77,8 +77,10 @@ export async function fetchLaunches(): Promise<{ launches: Launch[]; age: CacheA
     ttlMs: TTL_MS,
     fetcher: async () => {
       const since = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString();
+      const until = new Date().toISOString();
       const url = new URL(LL2_URL);
       url.searchParams.set('net__gte', since);
+      url.searchParams.set('net__lte', until);
       url.searchParams.set('limit', '50');
       url.searchParams.set('mode', 'detailed');
       url.searchParams.set('ordering', '-net');
