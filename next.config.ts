@@ -30,6 +30,14 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async rewrites() {
+    return [
+      // The God's Eye View SPA is static under public/globe. Next serves
+      // public/ verbatim, so /globe (no trailing slash) needs pointing at the
+      // entry document explicitly.
+      { source: '/globe', destination: '/globe/index.html' },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -64,3 +64,6 @@ scanner_backend_backup.js
 launcher/.appwindow/
 launcher/logs/
 launcher/*.ico
+
+# GEV route disk caches (Overpass, CelesTrak, terrain heights)
+.oasis-cache/

@@ -1,0 +1,26 @@
+diff --git a/src/logoGaze.js b/src/logoGaze.js
+index c925083..ed36c1f 100644
+--- a/src/logoGaze.js
++++ b/src/logoGaze.js
+@@ -88,7 +88,7 @@ export function initLogoGaze(root = document) {
+ 
+   const loadInlineLogos = async () => {
+     try {
+-      const source = logos[0].dataset.logoSrc || '/logo.svg';
++      const source = logos[0].dataset.logoSrc || `${import.meta.env.BASE_URL}logo.svg`;
+       const response = await window.fetch(source);
+       if (!response.ok) return;
+       const markup = await response.text();
+diff --git a/src/voice/gevRealtime.js b/src/voice/gevRealtime.js
+index ab566fe..f953b19 100644
+--- a/src/voice/gevRealtime.js
++++ b/src/voice/gevRealtime.js
+@@ -2560,7 +2560,7 @@ function createVoiceControl({ reset = false } = {}) {
+         </div>
+       </div>
+       <button id="gev-voice-button" type="button" aria-label="Voice control — hold Space to speak; click to toggle voice" aria-describedby="gev-voice-help">
+-        <span class="gev-mic-orbit"><img src="/mic.svg" alt="" /></span>
++        <span class="gev-mic-orbit"><img src="${import.meta.env.BASE_URL}mic.svg" alt="" /></span>
+         <span class="gev-mic-label">ON/OFF</span>
+       </button>
+       <div class="gev-voice-visualizer" aria-hidden="true">
