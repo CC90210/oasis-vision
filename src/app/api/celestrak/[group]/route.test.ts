@@ -7,8 +7,12 @@ import { clearGevCache } from '@/lib/gev-cache';
  * rocketLaunches.js) requests satellite groups path-style —
  * `/api/celestrak/<group>` — never the query-string form. Before this route
  * existed, every group but the static `active` sibling 404d and the
- * satellite layer stayed empty. These tests pin the path resolving to real
- * data, and an invalid group still being rejected on this path too.
+ * satellite layer stayed empty.
+ *
+ * These pin the path RESOLUTION and the group allowlist. The response
+ * CONTRACT (raw TLE text, provenance in headers) is pinned separately in
+ * ../contract.test.ts — the two are different failures and neither test
+ * catches the other's.
  */
 
 const TLE_SAMPLE = [
@@ -33,7 +37,7 @@ describe('GET /api/celestrak/[group] — path-style resolution', () => {
     vi.unstubAllGlobals();
   });
 
-  it('resolves a path-style group request and returns TLE records', async () => {
+  it('resolves a path-style group request and returns its TLE', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -43,11 +47,10 @@ describe('GET /api/celestrak/[group] — path-style resolution', () => {
 
     const res = await callGet('stations');
     expect(res.status).toBe(200);
-
-    const body = await res.json();
-    expect(body.group).toBe('stations');
-    expect(body.count).toBe(1);
-    expect(body.records[0].noradId).toBe('25544');
+    expect(await res.text()).toBe(TLE_SAMPLE);
+    // The parsed object count is reported alongside the text, not instead of it.
+    expect(res.headers.get('x-oasis-count')).toBe('1');
+    expect(res.headers.get('x-oasis-group')).toBe('stations');
 
     // Confirms the route actually forwarded the path segment as the upstream
     // GROUP, not a hardcoded value.
@@ -65,5 +68,18 @@ describe('GET /api/celestrak/[group] — path-style resolution', () => {
 
     expect(res.status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('serves an upstream throttle page as a 502, never as zero satellites', async () => {
+    // CelesTrak answers 200 with HTML when throttling. Forwarding that body
+    // would reach the client's parseTLE as an empty catalogue.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => '<html><body>Rate limited</body></html>',
+    }));
+
+    const res = await callGet('stations');
+    expect(res.status).toBe(502);
   });
 });

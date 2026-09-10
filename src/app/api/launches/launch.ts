@@ -12,68 +12,60 @@ import { cachedJson, type CacheAge } from '@/lib/gev-cache';
  * ascent telemetry or live orbital state, and a failed launch must never be
  * given fallback trajectory geometry or a live marker — that would be the
  * "confident nonsense" this codebase names as its recurring defect.
+ *
+ * ── What this returns, and why ─────────────────────────────────────────────
+ * The upstream `results` array of RAW LL2 records.
+ *
+ *   gods-eye-view src/data/rocketLaunches.js:3345-3346
+ *       normalizeRocketLaunches(await response.json())
+ *   gods-eye-view src/data/rocketLaunches.js:2782-2783
+ *       const launches = Array.isArray(payload) ? payload : payload?.results;
+ *   gods-eye-view src/data/rocketLaunches.js:2786-2820
+ *       walks launch.net / window_start, launch.pad.{name,latitude,longitude},
+ *       launch.pad.location.{name,coordinates}, launch.status.name,
+ *       launch.launch_service_provider.name, launch.mission.{name,description,
+ *       orbit}, launch.timeline[].{type.abbrev,relative_time},
+ *       launch.trajectory
+ *
+ * There was a `mapLaunch` here that flattened those into
+ * `{ lat, lng, padName, provider, … }`. It has been REMOVED rather than kept
+ * as a validator, for a reason specific to this endpoint: its only remaining
+ * gate would have been "the record has an id", and the client explicitly does
+ * not require one (`String(launch.id || launch.slug || launch.name || …)`,
+ * rocketLaunches.js:2797). A proxy that filters more strictly than its
+ * consumer drops launches the globe would happily have rendered, and it does
+ * so silently. The gate below is therefore the weakest one that is still
+ * honest: it must be a record, not an array, not a string.
  */
 
 const LL2_URL = 'https://ll.thespacedevs.com/2.3.0/launches/';
 const TTL_MS = 15 * 60_000;
 const WINDOW_DAYS = 30;
 
-export interface Launch {
-  id: string;
-  name: string | null;
-  status: string | null;
-  statusAbbrev: string | null;
-  net: string | null;
-  provider: string | null;
-  rocket: string | null;
-  padName: string | null;
-  padLocation: string | null;
-  lat: number | null;
-  lng: number | null;
-  missionDescription: string | null;
-  orbitName: string | null;
+/**
+ * Header values are ByteStrings: any code point above 255 throws when the
+ * response is constructed. An em dash here took the whole route to 502 until
+ * the contract test caught it. ASCII only in anything that becomes a header.
+ */
+export const LAUNCH_SOURCE = 'Launch Library 2 (The Space Devs)';
+
+export interface LaunchFeed {
+  count: number;
+  results: Array<Record<string, unknown>>;
 }
 
-const rec = (v: unknown): Record<string, unknown> | null =>
-  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
-
-const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
-
-/** LL2 sends pad coordinates as numbers on some records and strings on others. */
-const coord = (v: unknown): number | null => {
-  const n = typeof v === 'string' ? Number(v) : v;
-  return typeof n === 'number' && Number.isFinite(n) ? n : null;
-};
-
-export function mapLaunch(raw: unknown): Launch | null {
-  const l = rec(raw);
-  const id = str(l?.id);
-  if (!l || !id) return null;
-
-  const status = rec(l.status);
-  const pad = rec(l.pad);
-  const mission = rec(l.mission);
-
-  return {
-    id,
-    name: str(l.name),
-    status: str(status?.name),
-    statusAbbrev: str(status?.abbrev),
-    net: str(l.net),
-    provider: str(rec(l.launch_service_provider)?.name),
-    rocket: str(rec(rec(l.rocket)?.configuration)?.full_name),
-    padName: str(pad?.name),
-    padLocation: str(rec(pad?.location)?.name),
-    lat: coord(pad?.latitude),
-    lng: coord(pad?.longitude),
-    missionDescription: str(mission?.description),
-    orbitName: str(rec(mission?.orbit)?.name),
-  };
+/**
+ * The weakest honest gate: a launch record is a JSON object. Anything else
+ * (LL2's error strings, a stray array) cannot be walked by the client's
+ * normalizer and would throw inside it.
+ */
+export function isLaunchRecord(raw: unknown): raw is Record<string, unknown> {
+  return Boolean(raw) && typeof raw === 'object' && !Array.isArray(raw);
 }
 
-export async function fetchLaunches(): Promise<{ launches: Launch[]; age: CacheAge; fetchedAt: number }> {
-  const result = await cachedJson<Launch[]>({
-    key: 'll2-launches-30d',
+export async function fetchLaunches(): Promise<{ feed: LaunchFeed; age: CacheAge; fetchedAt: number }> {
+  const result = await cachedJson<LaunchFeed>({
+    key: 'll2-launches-30d-raw',
     ttlMs: TTL_MS,
     fetcher: async () => {
       const since = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString();
@@ -94,16 +86,19 @@ export async function fetchLaunches(): Promise<{ launches: Launch[]; age: CacheA
       if (!res.ok) throw new Error(`Launch Library 2 HTTP ${res.status}`);
 
       const body = await res.json();
-      const rows = Array.isArray(body?.results) ? body.results : [];
-      const launches: Launch[] = [];
-      for (const row of rows) {
-        const m = mapLaunch(row);
-        if (m) launches.push(m);
+      const rows: unknown[] = Array.isArray(body?.results) ? body.results : [];
+      const results = rows.filter(isLaunchRecord);
+      if (rows.length > 0 && results.length === 0) {
+        throw new Error(`Launch Library 2 returned ${rows.length} rows, none of them launch records`);
       }
-      return launches;
+
+      return { count: results.length, results };
     },
   });
 
-  console.log(`[OSIRIS] launches — ${result.data.length} in the last ${WINDOW_DAYS}d (${result.age})`);
-  return { launches: result.data, age: result.age, fetchedAt: result.fetchedAt };
+  console.log(`[OSIRIS] launches — ${result.data.results.length} in the last ${WINDOW_DAYS}d (${result.age})`);
+  if (result.data.results.length === 0) {
+    console.warn('[OSIRIS] launches — zero launches in window; the launches layer will be empty');
+  }
+  return { feed: result.data, age: result.age, fetchedAt: result.fetchedAt };
 }

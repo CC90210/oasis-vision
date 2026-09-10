@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mapLaunch, fetchLaunches } from './launch';
+import { isLaunchRecord, fetchLaunches } from './launch';
 import { clearGevCache } from '@/lib/gev-cache';
 
 // A real trimmed record from
@@ -21,55 +21,36 @@ const sample = {
   },
 };
 
-const patch = (p: Record<string, unknown>) => ({ ...sample, ...p });
-
-describe('mapLaunch', () => {
-  it('maps a real detailed record', () => {
-    expect(mapLaunch(sample)).toEqual({
-      id: '9d576892-1a5f-4b3c-9d2e-000000000001',
-      name: 'Falcon 9 Block 5 | Starlink Group 11-5',
-      status: 'Launch Successful',
-      statusAbbrev: 'Success',
-      net: '2026-09-08T14:22:00Z',
-      provider: 'SpaceX',
-      rocket: 'Falcon 9 Block 5',
-      padName: 'Space Launch Complex 4E',
-      padLocation: 'Vandenberg SFB, CA, USA',
-      lat: 34.632,
-      lng: -120.611,
-      missionDescription: 'A batch of satellites.',
-      orbitName: 'Low Earth Orbit',
-    });
+/**
+ * `mapLaunch` was REMOVED, not demoted to a validator. It flattened LL2
+ * records into `{ lat, lng, padName, provider, … }`, and the vendored client
+ * walks the nested LL2 paths instead (gods-eye-view
+ * src/data/rocketLaunches.js:2786-2820), so its output could not be the
+ * response. Keeping it as a gate would have been worse than deleting it: its
+ * only surviving rule was "the record has an id", and the client explicitly
+ * tolerates a record with none (`launch.id || launch.slug || launch.name`,
+ * rocketLaunches.js:2797). A proxy that filters more strictly than its
+ * consumer drops launches the globe would have rendered — silently, since a
+ * short list looks exactly like a quiet month.
+ *
+ * What replaced it is the weakest honest gate. These tests pin that it stays
+ * weak. The response shape itself is pinned by contract.test.ts.
+ */
+describe('isLaunchRecord', () => {
+  it('accepts a launch record with no id, because the client does', () => {
+    expect(isLaunchRecord({ ...sample, id: undefined })).toBe(true);
+    expect(isLaunchRecord({ slug: 'some-launch' })).toBe(true);
   });
 
-  it('parses pad coordinates delivered as strings', () => {
-    const out = mapLaunch(patch({ pad: { ...sample.pad, latitude: '34.632', longitude: '-120.611' } }));
-    expect(out?.lat).toBe(34.632);
-    expect(out?.lng).toBe(-120.611);
+  it('accepts a real detailed record', () => {
+    expect(isLaunchRecord(sample)).toBe(true);
   });
 
-  it('keeps a launch with no pad coordinates but reports them as null', () => {
-    const out = mapLaunch(patch({ pad: { ...sample.pad, latitude: null, longitude: null } }));
-    expect(out).not.toBeNull();
-    expect(out?.lat).toBeNull();
-    expect(out?.lng).toBeNull();
-  });
-
-  it('carries a failure status through instead of normalising it away', () => {
-    const out = mapLaunch(patch({ status: { id: 4, name: 'Launch Failure', abbrev: 'Failure' } }));
-    expect(out?.status).toBe('Launch Failure');
-    expect(out?.statusAbbrev).toBe('Failure');
-  });
-
-  it('leaves absent optional blocks null rather than inventing them', () => {
-    const out = mapLaunch(patch({ mission: null }));
-    expect(out?.missionDescription).toBeNull();
-    expect(out?.orbitName).toBeNull();
-  });
-
-  it('rejects a record with no id', () => {
-    expect(mapLaunch(patch({ id: undefined }))).toBeNull();
-    expect(mapLaunch(null)).toBeNull();
+  it('rejects what the client normalizer cannot walk', () => {
+    expect(isLaunchRecord(null)).toBe(false);
+    expect(isLaunchRecord('unknown launch')).toBe(false);
+    expect(isLaunchRecord([])).toBe(false);
+    expect(isLaunchRecord(42)).toBe(false);
   });
 });
 
@@ -121,5 +102,18 @@ describe('fetchLaunches — query window', () => {
     const spanDays = (lteMs - gteMs) / 86_400_000;
     expect(spanDays).toBeGreaterThan(29);
     expect(spanDays).toBeLessThan(31);
+  });
+
+  it('forwards the upstream records untouched', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ count: 1, results: [sample] }),
+    }));
+
+    const { feed } = await fetchLaunches();
+    expect(feed.count).toBe(1);
+    // Deep equality with the upstream record: nothing renamed, nothing dropped.
+    expect(feed.results[0]).toEqual(sample);
   });
 });

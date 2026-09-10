@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { canonicalPoint, parsePoints, MAX_POINTS } from './points';
-import { POST } from './route';
+import { canonicalPoint, parsePoints, parsePointsParam, MAX_POINTS } from './points';
+import { POST, type HeightResult } from './route';
 import { cachedJson, clearGevCache } from '@/lib/gev-cache';
 
 describe('canonicalPoint', () => {
@@ -43,6 +43,42 @@ describe('parsePoints', () => {
 
   it('accepts an empty list without throwing', () => {
     expect(parsePoints({ points: [] })).toEqual([]);
+  });
+});
+
+describe('parsePointsParam — the query form the globe client sends', () => {
+  it('parses lon,lat pairs separated by semicolons', () => {
+    expect(parsePointsParam('-73.60000,45.50000;2.35000,48.85000'))
+      .toEqual([{ lng: -73.6, lat: 45.5 }, { lng: 2.35, lat: 48.85 }]);
+  });
+
+  it('rejects a non-numeric component rather than coercing it to zero', () => {
+    expect(() => parsePointsParam('abc,def')).toThrow(/non-numeric|only digits/i);
+  });
+
+  it('charset-allowlists the raw string before splitting it', () => {
+    // This string is rebuilt into an upstream query, so it is checked, not
+    // merely encoded.
+    expect(() => parsePointsParam('1,2&FORMAT=json')).toThrow(/only digits/i);
+    expect(() => parsePointsParam('../../etc/passwd')).toThrow(/only digits/i);
+  });
+
+  it('rejects an out-of-range coordinate rather than clamping it', () => {
+    expect(() => parsePointsParam('-73.6,95')).toThrow(/latitude/i);
+    expect(() => parsePointsParam('-200,45')).toThrow(/longitude/i);
+  });
+
+  it('rejects more points than the cap', () => {
+    const many = Array.from({ length: MAX_POINTS + 1 }, () => '0,0').join(';');
+    expect(() => parsePointsParam(many)).toThrow(/2000/);
+  });
+
+  it('names the missing parameter instead of answering an empty batch', () => {
+    expect(() => parsePointsParam(null)).toThrow(/missing \?points=/);
+  });
+
+  it('treats an empty value as an empty batch', () => {
+    expect(parsePointsParam('')).toEqual([]);
   });
 });
 
@@ -110,8 +146,12 @@ describe('POST /api/terrain/heights — real batching, order preservation', () =
     // Pre-populate the cache for one point directly, bypassing the route —
     // it must come back at its OWN position, not shoved to the front or back.
     const cachedPoint = { lng: 10, lat: 10 };
-    const key = `terrain-${canonicalPoint(cachedPoint.lng, cachedPoint.lat)}`;
-    await cachedJson<number | null>({ key, ttlMs: TTL_MS, fetcher: async () => 999 });
+    const key = `terrain-pt-${canonicalPoint(cachedPoint.lng, cachedPoint.lat)}`;
+    await cachedJson<HeightResult>({
+      key,
+      ttlMs: TTL_MS,
+      fetcher: async () => ({ lon: cachedPoint.lng, lat: cachedPoint.lat, elevation: 999, geoid: 0, ellipsoid: 999 }),
+    });
 
     const missA = { lng: 20, lat: 20 };
     const missB = { lng: 30, lat: 30 };
@@ -124,11 +164,13 @@ describe('POST /api/terrain/heights — real batching, order preservation', () =
     const res = await POST(postRequest(points));
     const body = await res.json();
 
-    expect(body.heights).toEqual([
+    expect(body.results.map((r: HeightResult) => r.ellipsoid)).toEqual([
       elevationOf(missA.lng, missA.lat),
       999,
       elevationOf(missB.lng, missB.lat),
     ]);
+    // The coordinates come back too, and in request order.
+    expect(body.results.map((r: HeightResult) => r.lon)).toEqual([missA.lng, cachedPoint.lng, missB.lng]);
   });
 
   it('batches only the cache misses, at most UPSTREAM_CHUNK per upstream call', async () => {
@@ -138,8 +180,8 @@ describe('POST /api/terrain/heights — real batching, order preservation', () =
     const res = await POST(postRequest(points));
     const body = await res.json();
 
-    expect(body.heights).toHaveLength(300);
-    expect(body.heights.every((h: number | null) => h !== null)).toBe(true);
+    expect(body.results).toHaveLength(300);
+    expect(body.results.every((r: HeightResult) => r.ellipsoid !== null)).toBe(true);
     // 300 misses at UPSTREAM_CHUNK=256 must be 2 upstream calls, never 300.
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
@@ -190,7 +232,7 @@ describe('POST /api/terrain/heights — real batching, order preservation', () =
     const res = await POST(postRequest(points));
     const body = await res.json();
 
-    expect(body.heights).toHaveLength(300);
+    expect(body.results).toHaveLength(300);
     expect(fetchMock).toHaveBeenCalledTimes(2); // 300 misses / 256 per call = 2 chunks
     expect(maxInFlight).toBeLessThanOrEqual(1); // ...but never both in flight at once
   });
@@ -201,8 +243,9 @@ describe('POST /api/terrain/heights — real batching, order preservation', () =
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) }));
     const first = await POST(postRequest([point]));
     const firstBody = await first.json();
-    expect(firstBody.heights).toEqual([null]);
-    expect(firstBody.provenance.unresolved).toBe(1);
+    expect(firstBody.results.map((r: HeightResult) => r.ellipsoid)).toEqual([null]);
+    // Provenance moved to headers so the body stays the shape the client parses.
+    expect(first.headers.get('x-oasis-unresolved')).toBe('1');
 
     // A fetcher that throws is never cached (documented gev-cache contract).
     // If the failure had been cached, this second call would still see fetch
@@ -210,7 +253,7 @@ describe('POST /api/terrain/heights — real batching, order preservation', () =
     const fetchMock = stubUpstream();
     const second = await POST(postRequest([point]));
     const secondBody = await second.json();
-    expect(secondBody.heights).toEqual([elevationOf(point.lng, point.lat)]);
+    expect(secondBody.results.map((r: HeightResult) => r.ellipsoid)).toEqual([elevationOf(point.lng, point.lat)]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

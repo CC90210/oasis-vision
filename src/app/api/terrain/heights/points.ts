@@ -24,6 +24,54 @@ export function canonicalPoint(lng: number, lat: number): string {
   return `${round(lng)},${round(lat)}`;
 }
 
+function checkedPoint(lng: unknown, lat: unknown, i: number): Point {
+  if (typeof lng !== 'number' || !Number.isFinite(lng) || lng < -180 || lng > 180) {
+    throw new Error(`terrain: point ${i} has an out-of-range longitude`);
+  }
+  if (typeof lat !== 'number' || !Number.isFinite(lat) || lat < -90 || lat > 90) {
+    throw new Error(`terrain: point ${i} has an out-of-range latitude`);
+  }
+  return { lng, lat };
+}
+
+/**
+ * The query form the vendored globe client sends:
+ *
+ *   gods-eye-view src/data/terrainHeights.js:100-103
+ *     const pointsParam = chunk.map(({lat,lon}) => `${lon.toFixed(5)},${lat.toFixed(5)}`).join(';');
+ *     fetch(`/api/terrain/heights?points=${encodeURIComponent(pointsParam)}`)
+ *
+ * `lon,lat` order — the same order the upstream uses, and the reverse of how
+ * coordinates are usually written. It is charset-checked before it is split,
+ * because this string is rebuilt into an upstream query.
+ */
+export function parsePointsParam(raw: string | null): Point[] {
+  if (raw === null) throw new Error('terrain: missing ?points= (format: lon,lat;lon,lat;...)');
+
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+
+  if (!/^[-0-9.,;\s]+$/.test(trimmed)) {
+    throw new Error('terrain: ?points= accepts only digits, "-", ".", "," and ";"');
+  }
+
+  const pairs = trimmed.split(';').map(s => s.trim()).filter(s => s.length > 0);
+  if (pairs.length > MAX_POINTS) {
+    throw new Error(`terrain: at most ${MAX_POINTS} points per request`);
+  }
+
+  return pairs.map((pair, i) => {
+    const parts = pair.split(',');
+    if (parts.length !== 2) throw new Error(`terrain: point ${i} is not a "lon,lat" pair`);
+    const lng = Number(parts[0]);
+    const lat = Number(parts[1]);
+    if (parts[0].trim() === '' || parts[1].trim() === '' || !Number.isFinite(lng) || !Number.isFinite(lat)) {
+      throw new Error(`terrain: point ${i} has a non-numeric component`);
+    }
+    return checkedPoint(lng, lat, i);
+  });
+}
+
 export function parsePoints(body: unknown): Point[] {
   const raw = (body as { points?: unknown })?.points;
   if (!Array.isArray(raw)) throw new Error('terrain: body must carry a "points" array');
@@ -42,13 +90,6 @@ export function parsePoints(body: unknown): Point[] {
       throw new Error(`terrain: point ${i} is not a pair or an object`);
     }
 
-    if (typeof lng !== 'number' || !Number.isFinite(lng) || lng < -180 || lng > 180) {
-      throw new Error(`terrain: point ${i} has an out-of-range longitude`);
-    }
-    if (typeof lat !== 'number' || !Number.isFinite(lat) || lat < -90 || lat > 90) {
-      throw new Error(`terrain: point ${i} has an out-of-range latitude`);
-    }
-
-    return { lng, lat };
+    return checkedPoint(lng, lat, i);
   });
 }

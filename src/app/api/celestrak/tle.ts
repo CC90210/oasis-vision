@@ -10,6 +10,15 @@ import { cachedJson, type CacheAge } from '@/lib/gev-cache';
  *
  * It 403s bulk groups such as `active` unless the request carries a descriptive
  * User-Agent with a contact point.
+ *
+ * WHAT THIS RETURNS, AND WHY: the raw upstream TLE TEXT, verbatim.
+ * The vendored globe client does `parseTLE(await res.text())`
+ * (gods-eye-view src/data/satellites.js:1104-1108 and :1637, and
+ * src/data/rocketLaunches.js:3258-3262). It never calls `res.json()` here.
+ * A JSON envelope parses to zero entries, so the satellite layer empties
+ * behind a 200 with nothing logged anywhere — the worst failure shape in
+ * this codebase. `parseTle` below stays as a VALIDATOR and a counter, not
+ * as the response.
  */
 
 const GP_URL = 'https://celestrak.org/NORAD/elements/gp.php';
@@ -36,6 +45,10 @@ export function isValidGroup(group: string): boolean {
  * Anything that is not a well-formed triple is dropped rather than guessed at —
  * CelesTrak serves HTML error pages with status 200 when throttling, and a
  * half-parsed record would be plotted as a satellite that does not exist.
+ *
+ * This no longer shapes the response. It is the gate that decides whether the
+ * body we are about to hand the client is TLE at all, and it supplies the
+ * object count for the log line. Kept, and kept tested, for exactly that.
  */
 export function parseTle(text: string): TleRecord[] {
   const lines = text.split(/\r?\n/).map(l => l.trimEnd()).filter(l => l.trim().length > 0);
@@ -59,11 +72,11 @@ export function parseTle(text: string): TleRecord[] {
 
 export async function fetchTleGroup(
   group: string,
-): Promise<{ records: TleRecord[]; age: CacheAge; fetchedAt: number }> {
+): Promise<{ text: string; records: TleRecord[]; age: CacheAge; fetchedAt: number }> {
   if (!isValidGroup(group)) throw new Error(`celestrak: rejected group name "${group}"`);
 
-  const result = await cachedJson<TleRecord[]>({
-    key: `celestrak-${group}`,
+  const result = await cachedJson<string>({
+    key: `celestrak-text-${group}`,
     ttlMs: TTL_MS,
     fetcher: async () => {
       const url = new URL(GP_URL);
@@ -76,16 +89,18 @@ export async function fetchTleGroup(
       });
       if (!res.ok) throw new Error(`CelesTrak HTTP ${res.status} for group ${group}`);
 
-      const records = parseTle(await res.text());
-      if (records.length === 0) {
+      const text = await res.text();
+      if (parseTle(text).length === 0) {
         // A 200 carrying no parseable TLE is CelesTrak throttling us with an
-        // HTML page. Treated as a failure so the stale copy is served instead.
+        // HTML page. Treated as a failure so the stale copy is served instead
+        // of an HTML page reaching the client's parser as "zero satellites".
         throw new Error(`CelesTrak returned no parseable TLE for group ${group}`);
       }
-      return records;
+      return text;
     },
   });
 
-  console.log(`[OSIRIS] celestrak ${group} — ${result.data.length} objects (${result.age})`);
-  return { records: result.data, age: result.age, fetchedAt: result.fetchedAt };
+  const records = parseTle(result.data);
+  console.log(`[OSIRIS] celestrak ${group} — ${records.length} objects (${result.age})`);
+  return { text: result.data, records, age: result.age, fetchedAt: result.fetchedAt };
 }
