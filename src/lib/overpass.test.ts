@@ -73,4 +73,27 @@ describe('overpassQuery', () => {
     await Promise.all([overpassQuery('node(4);out;'), overpassQuery('node(4);out;')]);
     expect(calls).toBe(1);
   });
+
+  it('gives queries differing only inside a quoted literal separate cache entries', async () => {
+    // Two spaces vs. one space, both INSIDE the quoted tag value — a real,
+    // semantically different Overpass query, not cosmetic whitespace.
+    const qTwoSpaces = 'node["name"="New  York"];out;';
+    const qOneSpace = 'node["name"="New York"];out;';
+
+    const bodyTwoSpaces = JSON.stringify({ elements: [{ type: 'node', id: 500, lat: 1, lon: 1 }] });
+    const bodyOneSpace = JSON.stringify({ elements: [{ type: 'node', id: 501, lat: 2, lon: 2 }] });
+
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const sentQuery = new URLSearchParams(String(init?.body ?? '')).get('data');
+      if (sentQuery === qTwoSpaces) return new Response(bodyTwoSpaces, { status: 200 });
+      if (sentQuery === qOneSpace) return new Response(bodyOneSpace, { status: 200 });
+      throw new Error(`test double received an unexpected query: ${JSON.stringify(sentQuery)}`);
+    }));
+
+    const rTwoSpaces = await overpassQuery(qTwoSpaces);
+    const rOneSpace = await overpassQuery(qOneSpace);
+
+    expect(rTwoSpaces.elements[0].id).toBe(500);
+    expect(rOneSpace.elements[0].id).toBe(501);
+  });
 });

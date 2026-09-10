@@ -71,8 +71,6 @@ export function assertBbox(n: number, s: number, e: number, w: number): void {
   }
 }
 
-const normalise = (ql: string) => ql.replace(/\s+/g, ' ').trim();
-
 async function fetchFromMirrors(ql: string, timeoutMs: number): Promise<{ elements: OverpassElement[]; mirror: string }> {
   const refusals: string[] = [];
 
@@ -109,14 +107,26 @@ async function fetchFromMirrors(ql: string, timeoutMs: number): Promise<{ elemen
 }
 
 export async function overpassQuery(ql: string, opts: OverpassOptions = {}): Promise<OverpassResult> {
-  const query = normalise(ql);
-  const key = `overpass-${createHash('sha1').update(query).digest('hex').slice(0, 16)}`;
+  // The raw query is hashed as-is. A whitespace-collapsing normaliser was
+  // here and was removed (RULING R17): it blindly ran across the WHOLE
+  // string, including inside quoted tag-value literals, so
+  // `["name"="New  York"]` (two spaces — a real, different OSM value) and
+  // `["name"="New York"]` (one space) collapsed to the same key and one
+  // silently served the other's cached result. That is exactly the
+  // "cached answer presents as a different question's answer" defect this
+  // module exists to prevent. Hashing raw buys back correctness; the cost is
+  // a missed cache hit on cosmetically different but semantically identical
+  // queries, which is a hit-rate loss, not a wrong answer — and these
+  // queries are programmatic constants with an interpolated bbox, so the
+  // whitespace never varies in practice. A quote-aware normaliser would be
+  // more code with its own collision class to get wrong; simpler wins.
+  const key = `overpass-${createHash('sha1').update(ql).digest('hex').slice(0, 16)}`;
 
   const result = await cachedJson<{ elements: OverpassElement[]; mirror: string }>({
     key,
     ttlMs: opts.ttlMs ?? DEFAULT_TTL_MS,
     diskTtlMs: opts.boundary ? BOUNDARY_DISK_TTL_MS : DEFAULT_DISK_TTL_MS,
-    fetcher: () => fetchFromMirrors(query, opts.timeoutMs ?? TIMEOUT_MS),
+    fetcher: () => fetchFromMirrors(ql, opts.timeoutMs ?? TIMEOUT_MS),
   });
 
   console.log(
