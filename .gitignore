@@ -41,7 +41,13 @@ scanner/
 threatfox.json
 
 # Dev scripts (one-time migration helpers)
-scripts/
+# NOTE: pattern is scripts/* (not scripts/) so the negation below can work —
+# git cannot re-include a file whose parent directory is itself excluded.
+scripts/*
+# ...except build-globe.mjs: a permanent, required build step (regenerates
+# public/globe from the vendored God's Eye View client), not a one-time
+# migration helper. Keep tracked.
+!scripts/build-globe.mjs
 
 # AI agent config files
 # CLAUDE.md is deliberately TRACKED here, unlike upstream: it is the install
