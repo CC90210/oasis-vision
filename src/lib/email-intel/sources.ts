@@ -24,16 +24,10 @@
  */
 
 import crypto from 'crypto';
+import { BLOCKED_CODES, PROBE_UA } from '@/lib/probe-semantics';
 import type { SourceResult, AccountFinding, BreachFinding, NameSignal } from './types';
 
-const UA = 'OASIS-VISION/1.0 (+https://github.com/CC90210/oasis-vision)';
-
-/**
- * Refusals. Reading any of these as "no account" is the single largest
- * source of wrong answers in this class of tool — see the measurement
- * in `src/lib/sherlock.ts`.
- */
-const BLOCKED_CODES = new Set([401, 403, 407, 429, 451, 503]);
+const UA = PROBE_UA;
 
 function headers(extra: Record<string, string> = {}): Record<string, string> {
   return { 'User-Agent': UA, Accept: 'application/json', ...extra };

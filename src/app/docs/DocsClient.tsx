@@ -414,6 +414,30 @@ docker compose up -d`}</Pre>
                   k: 'OASIS_PORT',
                   v: 'Host port the UI is published on. The container itself always listens on 3000.',
                 },
+                {
+                  k: 'WIGLE_API_KEY',
+                  v: 'Unlocks WIFI GEOLOCATE. The base64 "encoded for use" token from wigle.net/account — not the API name. Free accounts have a small daily query budget. Without it the tool is greyed out rather than failing on use.',
+                },
+                {
+                  k: 'VIRUSTOTAL_API_KEY',
+                  v: 'Unlocks FILE / URL REP. Free tier allows 4 lookups per minute and 500 per day; the route limits to 3/min so you hit ours with a clear message rather than theirs with a 429.',
+                },
+                {
+                  k: 'HIBP_API_KEY',
+                  v: 'Adds HaveIBeenPwned to EMAIL INVESTIGATION at depth=deep. Paid. Without it the investigation still runs — HIBP is reported as skipped rather than failed, so a thin result is never mistaken for a clean subject.',
+                },
+                {
+                  k: 'TORBOT_URL',
+                  v: 'Address of the opt-in onion-crawl sidecar that backs DARK WEB. TorBot is GPL-3.0 and needs a Tor daemon, so nothing is bundled into OASIS VISION; this points at a container you run.',
+                },
+                {
+                  k: 'MAILACCESS_URL',
+                  v: 'Address of the optional deep email-investigation sidecar. The keyless Tier-1 investigation works without it.',
+                },
+                {
+                  k: 'OASIS_AUDIT_DIR',
+                  v: 'Where the RECON audit trail (recon-audit.jsonl) is written. Defaults to runs/ beside the server, which lives inside .next/standalone and is replaced on every rebuild — set this to keep the trail across rebuilds.',
+                },
               ].map(row => (
                 <div
                   key={row.k}

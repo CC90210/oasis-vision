@@ -167,6 +167,81 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
   /** How many tools in the panel cannot run, for the legend. */
   const lockedCount = TABS.filter((t) => caps?.[t.id] && !caps[t.id].available).length;
 
+  const [dragActive, setDragActive] = useState(false);
+
+  /**
+   * Declared authorisation purpose, sent with subject-identifying
+   * queries and recorded in the audit ledger.
+   *
+   * Without this the ledger recorded "unspecified" for every query,
+   * which makes the audit trail decorative — it could say that an
+   * address was investigated but never under what authority, which is
+   * the one question an audit exists to answer.
+   *
+   * Remembered per browser so it is declared once, not per lookup.
+   */
+  const [purpose, setPurpose] = useState<string>('');
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('oasis.recon.purpose');
+      if (saved) setPurpose(saved);
+    } catch { /* private mode: fall back to asking each session */ }
+  }, []);
+  const choosePurpose = useCallback((p: string) => {
+    setPurpose(p);
+    try { localStorage.setItem('oasis.recon.purpose', p); } catch { /* not fatal */ }
+  }, []);
+
+  /** Tools that identify a person, and so require a declared purpose. */
+  const SUBJECT_TOOLS = ['email', 'exif', 'darkweb', 'wigle'];
+  const needsPurpose = SUBJECT_TOOLS.includes(activeTab) && !purpose;
+
+  /**
+   * Analyse a local image.
+   *
+   * The IMAGE FORENSICS placeholder has always said "or drop a file
+   * below" and the POST route has always existed, but nothing connected
+   * them — so the panel promised a capability it did not have, which is
+   * the exact defect CLAUDE.md's first non-negotiable names. A local
+   * file is also the common case: you rarely hold a URL to the photo
+   * you are investigating.
+   */
+  const analyseImageFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setError('That is not an image file.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setResults(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const res = await fetch('/api/osint/exif', {
+        method: 'POST',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: buf,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setResults(data);
+      setHistory(prev => [{ tab: 'exif', query: file.name, time: new Date().toLocaleTimeString() }, ...prev.slice(0, 9)]);
+
+      if (Array.isArray(data.geo) && data.geo.length > 0 && onScanGeolocate) {
+        const g = data.geo[0];
+        if (typeof g?.lat === 'number' && typeof g?.lng === 'number') {
+          onScanGeolocate(file.name, {
+            lat: g.lat, lng: g.lng, type: 'exif', region: g.label, provenance: g.provenance, all: data.geo,
+          });
+        }
+      }
+    } catch (e) {
+      console.error('[OASIS] EXIF upload failed:', e);
+      setError(e instanceof Error ? e.message : 'Could not read that image');
+    } finally {
+      setLoading(false);
+    }
+  }, [onScanGeolocate]);
+
   const selectTool = useCallback((id: string) => {
     setActiveTab(id);
     setQuery('');
@@ -342,13 +417,13 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
         // The hardened server route already existed and was unused.
         case 'leaks': url = `/api/osint/leaks?email=${encodeURIComponent(query)}`; break;
         case 'infostealer': url = `/api/osint/hudsonrock?query=${encodeURIComponent(query)}`; break;
-        case 'email': url = `/api/osint/email?email=${encodeURIComponent(query)}&depth=${emailDepth}`; break;
+        case 'email': url = `/api/osint/email?email=${encodeURIComponent(query)}&depth=${emailDepth}&purpose=${encodeURIComponent(purpose || 'unspecified')}`; break;
         case 'sanctions': url = `/api/osint/sanctions?query=${encodeURIComponent(query)}`; break;
         case 'exif': url = `/api/osint/exif?url=${encodeURIComponent(query)}`; break;
-        case 'wigle': url = `/api/osint/wigle?q=${encodeURIComponent(query)}`; break;
+        case 'wigle': url = `/api/osint/wigle?q=${encodeURIComponent(query)}&purpose=${encodeURIComponent(purpose || 'unspecified')}`; break;
         case 'virustotal': url = `/api/osint/virustotal?q=${encodeURIComponent(query)}`; break;
         case 'bin': url = `/api/osint/bin?bin=${encodeURIComponent(query)}`; break;
-        case 'darkweb': url = `/api/osint/darkweb?url=${encodeURIComponent(query)}`; break;
+        case 'darkweb': url = `/api/osint/darkweb?url=${encodeURIComponent(query)}&purpose=${encodeURIComponent(purpose || 'unspecified')}`; break;
         case 'crypto': url = `/api/osint/crypto?address=${encodeURIComponent(query)}`; break;
         case 'username': url = `/api/osint/username?username=${encodeURIComponent(query)}`; break;
         case 'github': url = `/api/osint/github?user=${encodeURIComponent(query)}`; break;
@@ -1834,7 +1909,7 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
               className="w-full bg-[var(--bg-primary)]/60 border border-[var(--border-primary)] rounded-lg pl-8 pr-3 py-2.5 text-[10px] font-mono text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none transition-colors"
               style={{ borderColor: query ? `${currentTab?.color}40` : undefined }} />
           </div>
-          <button onClick={runLookup} disabled={loading || !query.trim()}
+          <button onClick={runLookup} disabled={loading || !query.trim() || needsPurpose}
             className="px-4 py-2 rounded-lg text-[11px] font-mono font-bold tracking-wider disabled:opacity-30 transition-all flex items-center justify-center min-w-[70px]"
             style={{ backgroundColor: `${currentTab?.color}20`, border: `1px solid ${currentTab?.color}40`, color: currentTab?.color }}>
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'SCAN'}
@@ -1850,6 +1925,40 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
           <div className="flex items-baseline gap-1.5 px-0.5 text-[9px] font-mono leading-snug">
             <span style={{ color: currentTab.color }}>{currentTab.blurb}</span>
             <span className="text-[var(--text-secondary)]">— expects {currentTab.placeholder.toLowerCase()}</span>
+          </div>
+        )}
+
+        {/* Authorisation gate. Declared once per browser, then carried
+            on every subject-identifying query into the audit ledger. */}
+        {needsPurpose && (
+          <div className="px-2 py-2 rounded-lg bg-[var(--hover-accent)] border border-[var(--border-primary)]">
+            <div className="text-[9px] font-mono font-bold tracking-wider text-[#FFD700] mb-1">
+              DECLARE YOUR BASIS BEFORE INVESTIGATING A PERSON
+            </div>
+            <div className="text-[9px] font-mono text-[var(--text-secondary)] leading-snug mb-1.5">
+              Recorded with the query. The address itself is hashed, never stored in clear.
+            </div>
+            <div className="flex flex-col gap-1">
+              {[
+                ['authorised-engagement', 'Authorised engagement — I have written permission'],
+                ['own-asset-audit', 'Own-asset audit — this address is mine or my org’s'],
+                ['client-authorised', 'Client-authorised — acting for the account holder'],
+              ].map(([id, label]) => (
+                <button key={id} onClick={() => choosePurpose(id)}
+                  className="text-left text-[9px] font-mono px-2 py-1 rounded border border-[var(--border-primary)] text-[var(--text-secondary)] hover:bg-[var(--hover-accent)] hover:text-[var(--text-primary)] transition-colors">
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {purpose && SUBJECT_TOOLS.includes(activeTab) && (
+          <div className="flex items-center gap-1.5 px-0.5 text-[9px] font-mono text-[var(--text-muted)]">
+            <Lock className="w-2.5 h-2.5" />
+            <span>Logged as <span className="text-[var(--text-secondary)]">{purpose}</span></span>
+            <button onClick={() => { setPurpose(''); try { localStorage.removeItem('oasis.recon.purpose'); } catch { /* not fatal */ } }}
+              className="ml-auto underline hover:text-[var(--text-primary)]">change</button>
           </div>
         )}
 
@@ -1876,6 +1985,45 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
             className="bg-[var(--bg-primary)]/60 border border-[var(--border-primary)] rounded-lg px-2 py-1.5 text-[11px] font-mono text-[var(--text-primary)] outline-none w-full">
             <option value="quick">QUICK SCAN</option><option value="deep">DEEP SCAN</option><option value="ports">TOP 1000 PORTS</option>
           </select>
+        )}
+
+        {/* The drop zone the IMAGE FORENSICS placeholder promises.
+            Everything happens server-side via POST /api/osint/exif; the
+            file never leaves this machine. */}
+        {activeTab === 'exif' && (
+          <label
+            onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragActive(false);
+              const f = e.dataTransfer.files?.[0];
+              if (f) analyseImageFile(f);
+            }}
+            className="flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-lg border border-dashed cursor-pointer transition-colors"
+            style={{
+              borderColor: dragActive ? '#40C4FF' : 'var(--border-primary)',
+              background: dragActive ? 'rgba(64,196,255,0.08)' : undefined,
+            }}
+          >
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) analyseImageFile(f);
+                e.target.value = '';
+              }}
+            />
+            <Camera className="w-4 h-4 text-[#40C4FF]" />
+            <span className="text-[10px] font-mono text-[var(--text-secondary)] text-center leading-snug">
+              Drop an image here, or click to choose one
+            </span>
+            <span className="text-[9px] font-mono text-[var(--text-muted)] text-center">
+              Read on this machine — the file is never uploaded anywhere else
+            </span>
+          </label>
         )}
 
         {/* How wide the email investigation fans out. `deep` adds the
