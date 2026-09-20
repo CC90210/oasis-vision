@@ -57,7 +57,7 @@ fails on Windows (EBUSY) and, worse, silently keeps serving stale code on macOS.
 
 ```bash
 npx tsc --noEmit      # must be clean
-npx vitest run        # 575 tests, must pass
+npx vitest run        # 782 tests, must pass
 npm run build         # must exit 0
 ```
 
@@ -80,7 +80,18 @@ dead for months behind exactly that (WSDOT 404, Ville de Montréal 403, Ontario
 every source prints is how the next one gets noticed.
 
 **Verify a source before building on it.** Fetch the endpoint, count the
-records, check the field casing. The Ontario bug was a capital letter.
+records, check the field casing. The Ontario bug was a capital letter. Building
+the email tools caught three wrong assumptions this way before they shipped:
+Gravatar's `.json` returns 200 for a hash that does not exist, Keybase dropped
+email lookup entirely, and GitHub's `in:email` matches profile text rather than
+verified ownership.
+
+**A refusal is not an absence.** HTTP 401/403/407/429/451/503 mean "we were
+blocked", never "no such account", and a source that failed must be named in the
+output rather than silently contributing nothing. `sherlock.ts` measured this:
+conflating the two produced 8 of 12 false negatives. Every probe in
+`email-intel/` reports `blocked` separately and the response carries a
+`sources.failed` ledger.
 
 **Test the mapping, not the network.** Each camera source exports `mapRecord`
 and has a `.test.ts` beside it with a real trimmed record. Follow that pattern.
@@ -95,12 +106,21 @@ src/app/api/cctv/          43 camera sources; route.ts registers regions
    ontario.ts              1,660 Ontario views
    opencctv.ts             9 world regions off a 145k shared index
 src/app/api/osint/         RECON toolkit routes
+   email/                  email -> identity, keyless (Tier 1)
+   capabilities/           what this install can actually run
+   exif/ bin/              forensics, keyless
+   wigle/ virustotal/      forensics, need an API key (Tier 2)
+   darkweb/                onion crawl via opt-in sidecar (Tier 3)
 src/components/
    OasisMap.tsx           the MapLibre globe
    CameraViewer.tsx        full camera modal
    CctvPreviews.tsx        camera tiles on the map
    OsintPanel.tsx          RECON toolkit
 src/lib/
+   email-intel/            email investigation: probes, consensus, risk
+   forensics/exif.ts       EXIF reader, GPS -> map pin
+   recon-audit.ts          hashed audit trail for subject queries
+   sherlock.ts             username enumeration - the pattern to copy
    camera-feed.ts          what a camera can show, and how it is described
    camera-preview.ts       tile media selection, preloadFrame
    sourceCache.ts          30-min TTL, stale-on-error, peekSource
@@ -109,10 +129,10 @@ launcher/                  desktop app: launchers, icons, installers
 
 ## Known gaps
 
-- **RECON active scanning returns 503.** The scanner is a separate backend that
-  does not ship with the code; no key enables it. The passive tools (DNS, WHOIS,
-  IP, certs, sanctions, breach, chain) all work. A server-side scanner is the
-  intended fix — the app already runs a local Node process.
+- **RECON active scanning still needs a backend**, but it no longer lies about
+  it. `/api/osint/capabilities` reports what this install can run, and the panel
+  greys those six tools out with the reason BEFORE anything is typed. Standing
+  one up (`SCANNER_URL` + `SCANNER_KEY`) remains the fix.
 - **`us-central` is empty** — travelmidwest now answers 200 with zero records.
 - **`us-east` serves 4 cameras.** Virginia 511 is live and keyless but unwired.
 - **Washington needs a free WSDOT API key**; the old endpoint is retired.

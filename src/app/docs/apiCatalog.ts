@@ -486,6 +486,71 @@ export const API_GROUPS: ApiGroup[] = [
         returns: ['breached', 'breaches', 'data_exposed', 'detail'],
       },
       {
+        path: '/api/osint/email',
+        method: 'GET',
+        summary:
+          'Full email investigation. Fans out to Gravatar, XposedOrNot, keys.openpgp.org and (at depth=deep) the GitHub user search, then grades the result into one identity claim, a breach list and a credential risk score. Keyless. Every account finding carries the evidence behind it, and sources that refused to answer are named rather than reported as absence.',
+        params: [
+          { name: 'email', required: true, desc: 'Address to investigate.', example: 'someone@example.com' },
+          { name: 'depth', required: false, desc: 'quick | standard | deep. Default standard. deep adds the GitHub search, which is capped at 10 requests/minute unauthenticated.', example: 'deep' },
+          { name: 'purpose', required: false, desc: 'Declared authorisation purpose, recorded in the audit ledger.', example: 'client-authorised' },
+        ],
+        returns: ['validity', 'identity', 'accounts', 'breaches', 'risk', 'geo', 'sources'],
+      },
+      {
+        path: '/api/osint/exif',
+        method: ['GET', 'POST'],
+        summary:
+          'Image metadata forensics. POST the image bytes, or GET with ?url= to fetch one (SSRF-guarded). GPS tags come back as decimal degrees ready to plot on the globe.',
+        params: [
+          { name: 'url', required: false, desc: 'Image URL for the GET form. POST the raw bytes instead for a local file.', example: 'https://example.com/photo.jpg' },
+        ],
+        returns: ['hasExif', 'gps', 'make', 'model', 'serial', 'dateTimeOriginal', 'tags', 'geo', 'notes'],
+      },
+      {
+        path: '/api/osint/bin',
+        method: 'GET',
+        summary:
+          'Card BIN/IIN lookup — issuing bank, scheme and country. Accepts 6-8 digits ONLY and refuses anything longer, so a full card number can never be submitted or logged.',
+        params: [{ name: 'bin', required: true, desc: 'First 6-8 digits of the card.', example: '457173' }],
+        returns: ['scheme', 'type', 'brand', 'bank', 'country', 'geo'],
+      },
+      {
+        path: '/api/osint/wigle',
+        method: 'GET',
+        summary:
+          'WiFi network geolocation via WiGLE. Turns an SSID or BSSID into observed positions. Tier 2 — answers 503 with available:false when WIGLE_API_KEY is unset, which the RECON panel uses to grey the tool out before you type.',
+        params: [{ name: 'q', required: true, desc: 'SSID or BSSID.', example: 'AA:BB:CC:DD:EE:FF' }],
+        returns: ['networks', 'geo', 'total', 'matchedOn'],
+      },
+      {
+        path: '/api/osint/virustotal',
+        method: 'GET',
+        summary:
+          'Multi-engine reputation for a hash, URL, domain or IP. Reports the vendor split as counts, never as a verdict. Tier 2 — needs VIRUSTOTAL_API_KEY.',
+        params: [{ name: 'q', required: true, desc: 'MD5/SHA-1/SHA-256 hash, URL, domain or IPv4.', example: '8.8.8.8' }],
+        returns: ['detections', 'summary', 'reputation', 'permalink'],
+      },
+      {
+        path: '/api/osint/darkweb',
+        method: 'GET',
+        summary:
+          'Onion service crawl via an opt-in sidecar. TorBot is GPL-3.0 and needs a Tor daemon, so nothing is bundled — set TORBOT_URL to point at a container. Accepts .onion targets only, depth hard-capped at 2.',
+        params: [
+          { name: 'url', required: true, desc: 'Onion address to crawl.', example: 'http://example.onion' },
+          { name: 'depth', required: false, desc: 'Crawl depth, capped at 2 regardless of what is asked.', example: '1' },
+        ],
+        returns: ['target', 'depth', 'depthCapped', 'available'],
+      },
+      {
+        path: '/api/osint/capabilities',
+        method: 'GET',
+        summary:
+          'Which RECON tools this install can actually run. The panel asks this first and greys out what cannot answer, with the reason. Reports only whether an env var is SET — never its value.',
+        params: [],
+        returns: ['capabilities', 'summary'],
+      },
+      {
         path: '/api/osint/hudsonrock',
         method: 'GET',
         summary: 'Reports whether an asset appears in Hudson Rock\'s infostealer corpus — machines compromised by credential-stealing malware.',

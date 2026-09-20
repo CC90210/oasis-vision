@@ -44,7 +44,7 @@ Measured against the running application, not estimated.
 | **Cyber** | CVE feeds, live malware telemetry, threat maps | ✅ |
 | **Conflict** | Active zones, GDACS events, frontlines | ✅ |
 | **News** | 25+ 24/7 broadcast streams, GDELT | ✅ |
-| **RECON** | DNS · WHOIS · certs · IP intel · breach exposure · OFAC sanctions · chain forensics | ✅ |
+| **RECON** | 27 modules — email→identity, DNS, WHOIS, certs, IP intel, breach exposure, OFAC sanctions, image forensics, chain forensics | ✅ |
 
 **~50 of 69 API routes are live and keyless.** Optional keys raise rate limits; none are needed
 to run.
@@ -118,7 +118,7 @@ shortcuts · `Esc` close panel
 
 ```bash
 npx tsc --noEmit      # must be clean
-npx vitest run        # 575 tests
+npx vitest run        # 782 tests
 npm run build         # must exit 0
 ```
 

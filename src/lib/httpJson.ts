@@ -19,16 +19,12 @@ import type { Readable } from 'stream';
 /**
  * Identifies THIS app on every outbound request.
  *
- * Until now this carried the upstream fork's name and repo
- * (`OASIS-VISION/1.0 (+https://github.com/CC90210/oasis-vision)`), which was
- * not a cosmetic leftover: Nominatim's usage policy requires a UA that traces
- * back to the operator actually making the calls. Every request we sent looked
- * like the original author's project, so a rate-limit block earned by us would
- * have landed on them, and our own traffic was unattributable when we needed to
+ * This used to carry the upstream fork's name and repo, which was not a
+ * cosmetic leftover: Nominatim's usage policy requires a UA that traces back
+ * to the operator actually making the calls. Every request we sent looked like
+ * the original author's project, so a rate-limit block earned by us would have
+ * landed on them, and our own traffic was unattributable when we needed to
  * argue about it. Keep the repo URL reachable — that link is the contact route.
- *
- * The identifier is still spelled OASIS_UA because `malware-live.ts` imports it
- * under that name; the wire value is what upstreams see.
  */
 export const OASIS_UA = 'OASIS-VISION/1.0 (+https://github.com/CC90210/oasis-vision)';
 

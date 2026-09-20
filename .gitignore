@@ -64,3 +64,6 @@ scanner_backend_backup.js
 launcher/.appwindow/
 launcher/logs/
 launcher/*.ico
+
+# RECON audit trail. Hashed, but still a record of who was investigated.
+runs/recon-audit.jsonl

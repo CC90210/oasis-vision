@@ -9,7 +9,8 @@ import {
   ChevronDown, ChevronUp, Loader2, AlertTriangle, Server,
   Wifi, Lock, MapPin, Bug, Code, Layers, Network, Fingerprint,
   CheckCircle, XCircle, Clock, ExternalLink, Crosshair,
-  Maximize2, Minimize2, Gavel, Bitcoin, Phone, Terminal, ShieldAlert, User, Skull, Monitor, KeyRound
+  Maximize2, Minimize2, Gavel, Bitcoin, Phone, Terminal, ShieldAlert, User, Skull, Monitor, KeyRound,
+  Mail, Camera, CreditCard, Wifi as WifiIcon, FileSearch, EyeOff
 } from 'lucide-react';
 import { ipToNumber, numberToIp, calculateSubnetStart, classifyDevice, assessRisk, batchFetch, ShodanInternetDBResponse, SweepDevice } from '@/lib/osint-utils';
 import ChainBrief from '@/components/ChainBrief';
@@ -24,6 +25,7 @@ const GROUPS = [
   { id: 'domain', label: 'DOMAIN & WEB', hint: 'DNS, certificates, site fingerprinting' },
   { id: 'identity', label: 'IDENTITY', hint: 'People, handles, accounts' },
   { id: 'threat', label: 'THREAT & EXPOSURE', hint: 'Reputation and breach data' },
+  { id: 'forensics', label: 'FORENSICS', hint: 'Images, hardware, cards, reputation' },
   { id: 'chain', label: 'BLOCKCHAIN', hint: 'Wallets and on-chain incidents' },
 ] as const;
 
@@ -38,6 +40,24 @@ interface ToolDef {
   group: GroupId;
   /** Shown under the label in the expanded view. */
   blurb: string;
+  /**
+   * 1 native and keyless · 2 needs an API key · 3 needs a sidecar.
+   *
+   * The panel greys out anything the running install cannot do BEFORE
+   * the analyst types, using /api/osint/capabilities. Six tools here
+   * (the scanner family) presented a live input box over a guaranteed
+   * 503 for months because nothing carried this.
+   */
+  tier?: 1 | 2 | 3;
+}
+
+/** What /api/osint/capabilities reports per tool. */
+interface Capability {
+  id: string;
+  tier: 1 | 2 | 3;
+  available: boolean;
+  reason: string | null;
+  requires: string[];
 }
 
 const TABS: ToolDef[] = [
@@ -56,6 +76,7 @@ const TABS: ToolDef[] = [
   { id: 'headers', label: 'HEADERS', icon: Code, placeholder: 'URL to inspect', color: '#87CEEB', group: 'domain', blurb: 'Security headers audit' },
   { id: 'tech', label: 'TECH DETECT', icon: Code, placeholder: 'URL to fingerprint', color: '#9C27B0', group: 'domain', blurb: 'Frameworks and stack' },
 
+  { id: 'email', label: 'EMAIL INVESTIGATION', icon: Mail, placeholder: 'Email address to investigate', color: '#00E676', group: 'identity', blurb: 'Identity, accounts, breaches and risk', tier: 1 },
   { id: 'username', label: 'USERNAME', icon: User, placeholder: 'Username / handle to hunt', color: '#00E676', group: 'identity', blurb: 'Hunt a handle across platforms' },
   { id: 'github', label: 'GITHUB RECON', icon: Terminal, placeholder: 'GitHub username', color: '#87CEEB', group: 'identity', blurb: 'Profile, repos and contacts' },
   { id: 'phone', label: 'PHONE INTEL', icon: Phone, placeholder: 'Phone number (e.g. +1...)', color: '#FF9500', group: 'identity', blurb: 'Carrier, region and line type' },
@@ -63,9 +84,27 @@ const TABS: ToolDef[] = [
   { id: 'threats', label: 'THREATS', icon: AlertTriangle, placeholder: 'IP, domain, or hash', color: '#FF9500', group: 'threat', blurb: 'Reputation across feeds' },
   { id: 'leaks', label: 'DATA LEAKS', icon: ShieldAlert, placeholder: 'Email address', color: '#E040FB', group: 'threat', blurb: 'Breach exposure for an address' },
   { id: 'infostealer', label: 'INFOSTEALER', icon: Skull, placeholder: 'Email, domain, username or phone', color: '#FF1744', group: 'threat', blurb: 'Hudson Rock malware-compromised assets' },
+  { id: 'sanctions', label: 'SANCTIONS', icon: Gavel, placeholder: 'Person, company or vessel name', color: '#FFD700', group: 'threat', blurb: 'OFAC and global sanctions lists', tier: 1 },
+  { id: 'darkweb', label: 'DARK WEB', icon: EyeOff, placeholder: '.onion address to crawl', color: '#B388FF', group: 'threat', blurb: 'Onion service crawl (opt-in sidecar)', tier: 3 },
+
+  { id: 'exif', label: 'IMAGE FORENSICS', icon: Camera, placeholder: 'Image URL, or drop a file below', color: '#40C4FF', group: 'forensics', blurb: 'EXIF, camera fingerprint and GPS', tier: 1 },
+  { id: 'wigle', label: 'WIFI GEOLOCATE', icon: WifiIcon, placeholder: 'SSID or BSSID (AA:BB:CC:DD:EE:FF)', color: '#76FF03', group: 'forensics', blurb: 'Map where a network was observed', tier: 2 },
+  { id: 'virustotal', label: 'FILE / URL REP', icon: FileSearch, placeholder: 'Hash, URL, domain or IP', color: '#FF6E40', group: 'forensics', blurb: 'Multi-engine reputation', tier: 2 },
+  { id: 'bin', label: 'CARD BIN', icon: CreditCard, placeholder: 'First 6-8 digits only', color: '#FFD54F', group: 'forensics', blurb: 'Issuing bank, scheme and country', tier: 1 },
 
   { id: 'crypto', label: 'CHAIN INTEL', icon: Bitcoin, placeholder: 'BTC, ETH or SOL wallet address', color: '#F7931A', group: 'chain', blurb: 'Wallet forensics and daily brief' },
 ];
+
+/**
+ * Tools whose query is itself a host or domain, so geolocating it says
+ * something true. Anything not listed here is left alone — an email
+ * address or a card BIN resolved through an IP lookup produces a pin
+ * that means nothing.
+ */
+const GEOLOCATABLE_QUERY = new Set([
+  'scanner', 'shodan', 'threats', 'dns', 'whois', 'certs',
+  'ssl', 'subdomains', 'headers', 'tech',
+]);
 
 interface OsintPanelProps { isOpen?: boolean; onClose?: () => void; isMobile?: boolean; onSweepVisualize?: (data: any) => void; onScanGeolocate?: (target: string, data: any) => void; }
 
@@ -88,6 +127,45 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
   const [chainView, setChainView] = useState<'brief' | 'wallet'>('brief');
   /** Free-text filter over the toolkit — 19 modules is too many to scan. */
   const [toolFilter, setToolFilter] = useState('');
+  /** How wide the email investigation fans out. */
+  const [emailDepth, setEmailDepth] = useState<'quick' | 'standard' | 'deep'>('standard');
+  /**
+   * What this install can actually run, from /api/osint/capabilities.
+   * Null until the probe answers — tools render enabled meanwhile
+   * rather than flashing every one of them as broken on first paint.
+   */
+  const [caps, setCaps] = useState<Record<string, Capability> | null>(null);
+
+  // Ask once per mount. A tool that cannot run is greyed out with its
+  // reason BEFORE the analyst types, which is the whole point: six
+  // tools used to accept input and then fail with 503.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/osint/capabilities')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { capabilities?: Record<string, Capability> }) => {
+        if (!cancelled && d.capabilities) setCaps(d.capabilities);
+      })
+      .catch((e) => {
+        // Logged, not swallowed. If this probe dies the panel stays
+        // usable — every tool just renders enabled, as before.
+        console.error('[OASIS] capability probe failed:', e instanceof Error ? e.message : e);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  /** Unavailable => the reason to show. Available or unknown => null. */
+  const unavailableReason = useCallback(
+    (toolId: string): string | null => {
+      const c = caps?.[toolId];
+      if (!c || c.available) return null;
+      return c.reason ?? 'Unavailable in this install.';
+    },
+    [caps],
+  );
+
+  /** How many tools in the panel cannot run, for the legend. */
+  const lockedCount = TABS.filter((t) => caps?.[t.id] && !caps[t.id].available).length;
 
   const selectTool = useCallback((id: string) => {
     setActiveTab(id);
@@ -258,8 +336,19 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
         case 'bgp': url = `/api/osint/bgp?query=${encodeURIComponent(query)}`; break;
         case 'mac': url = `/api/osint/mac?mac=${encodeURIComponent(query)}`; break;
         case 'phone': url = `/api/osint/phone?number=${encodeURIComponent(query)}`; break;
-        case 'leaks': url = `https://api.xposedornot.com/v1/breach-analytics?email=${encodeURIComponent(query)}`; break;
+        // Was calling api.xposedornot.com straight from the browser,
+        // which sent the analyst's own IP and the subject's address to
+        // a third party with no rate limit and no error normalisation.
+        // The hardened server route already existed and was unused.
+        case 'leaks': url = `/api/osint/leaks?email=${encodeURIComponent(query)}`; break;
         case 'infostealer': url = `/api/osint/hudsonrock?query=${encodeURIComponent(query)}`; break;
+        case 'email': url = `/api/osint/email?email=${encodeURIComponent(query)}&depth=${emailDepth}`; break;
+        case 'sanctions': url = `/api/osint/sanctions?query=${encodeURIComponent(query)}`; break;
+        case 'exif': url = `/api/osint/exif?url=${encodeURIComponent(query)}`; break;
+        case 'wigle': url = `/api/osint/wigle?q=${encodeURIComponent(query)}`; break;
+        case 'virustotal': url = `/api/osint/virustotal?q=${encodeURIComponent(query)}`; break;
+        case 'bin': url = `/api/osint/bin?bin=${encodeURIComponent(query)}`; break;
+        case 'darkweb': url = `/api/osint/darkweb?url=${encodeURIComponent(query)}`; break;
         case 'crypto': url = `/api/osint/crypto?address=${encodeURIComponent(query)}`; break;
         case 'username': url = `/api/osint/username?username=${encodeURIComponent(query)}`; break;
         case 'github': url = `/api/osint/github?user=${encodeURIComponent(query)}`; break;
@@ -269,7 +358,9 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
         case 'ssl': url = `/api/scanner?target=${encodeURIComponent(query)}&type=ssl`; break;
         case 'subdomains': url = `/api/scanner?target=${encodeURIComponent(query)}&type=subdomains`; break;
         case 'tech': url = `/api/scanner?target=${encodeURIComponent(query)}&type=tech`; break;
-        case 'shodan': url = `https://internetdb.shodan.io/${encodeURIComponent(query)}`; break;
+        // Same defect as `leaks`: this hit internetdb.shodan.io from
+        // the browser. /api/osint/shodan is the hardened equivalent.
+        case 'shodan': url = `/api/osint/shodan?ip=${encodeURIComponent(query)}`; break;
       }
       const res = await fetch(url, activeTab === 'shodan' ? { cache: 'no-store' } : undefined);
       if (activeTab === 'shodan' && res.status === 404) {
@@ -285,37 +376,41 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
       }
       const data = await res.json();
       if (res.ok) {
-        let parsedData = data;
-        if (activeTab === 'leaks') {
-           let breachList: string[] = [];
-           const dataExposed = new Set<string>();
-           if (data.BreachesSummary && data.BreachesSummary.site) {
-              breachList = data.BreachesSummary.site.split(';').filter(Boolean);
-           }
-           if (data.ExposedData && Array.isArray(data.ExposedData)) {
-              data.ExposedData.forEach((item: any) => {
-                 if (item.data_classes && Array.isArray(item.data_classes)) {
-                    item.data_classes.forEach((dc: string) => dataExposed.add(dc));
-                 }
-              });
-           }
-           parsedData = {
-              email: query,
-              breached: breachList.length > 0,
-              breaches: breachList,
-              data_exposed: Array.from(dataExposed).sort()
-           };
-        }
-
-        setResults(parsedData);
+        // `leaks` used to arrive here as raw XposedOrNot JSON and was
+        // reshaped in the browser. It now comes from /api/osint/leaks
+        // already normalised to { email, breached, breaches[],
+        // data_exposed[] }, so there is nothing left to parse.
+        setResults(data);
         setHistory(prev => [{ tab: activeTab, query, time: new Date().toLocaleTimeString() }, ...prev.slice(0, 9)]);
+
+        // Evidence that carries coordinates becomes a pin. This is the
+        // reason these tools belong in OASIS VISION rather than a CLI:
+        // an EXIF GPS tag or a WiGLE sighting is a position, and this
+        // console already renders a globe. `provenance` rides along so
+        // a pin can always say where it came from.
+        if (Array.isArray(data.geo) && data.geo.length > 0 && onScanGeolocate) {
+          const first = data.geo[0];
+          if (typeof first?.lat === 'number' && typeof first?.lng === 'number') {
+            onScanGeolocate(query, {
+              lat: first.lat,
+              lng: first.lng,
+              type: activeTab,
+              region: first.label,
+              provenance: first.provenance,
+              all: data.geo,
+            });
+          }
+        }
         
         // Geolocate the target in the background
         if (activeTab === 'phone') {
           if (data.lat && data.lng && onScanGeolocate) {
              onScanGeolocate(query, { lat: data.lat, lng: data.lng, type: 'phone', region: data.region });
           }
-        } else if (activeTab !== 'sweep' && activeTab !== 'vuln' && activeTab !== 'crypto' && activeTab !== 'username' && activeTab !== 'mac' && activeTab !== 'bgp' && activeTab !== 'github' && activeTab !== 'leaks' && activeTab !== 'phone' && activeTab !== 'infostealer') {
+        } else if (GEOLOCATABLE_QUERY.has(activeTab)) {
+          // Allowlist, not a deny-list. This was a chain of !== that had
+          // to be extended for every new tool, and forgetting one sent
+          // an email address to the IP geolocation endpoint.
           fetch(`/api/osint/ip?ip=${encodeURIComponent(query)}`)
             .then(r => r.json())
             .then(locData => {
@@ -502,6 +597,268 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
     }
 
 
+
+    // ── EMAIL INVESTIGATION ──
+    // Rendered as a report, not a blob: identity, then deliverability,
+    // then accounts, breaches, risk, and finally the source ledger —
+    // which is the part that says what we could NOT see.
+    if (activeTab === 'email') {
+      const conf: Record<string, string> = {
+        confirmed: '#00E676', probable: '#76FF03', possible: '#FFD700', unknown: '#8A8A8A',
+      };
+      const band: Record<string, string> = {
+        critical: '#FF1744', high: '#FF6E40', moderate: '#FFD700', low: '#76FF03', minimal: '#00E676',
+      };
+      const v = r.validity ?? {};
+      const id = r.identity ?? {};
+      const risk = r.risk ?? {};
+      const led = r.sources ?? {};
+
+      const foundCount = Array.isArray(r.accounts) ? r.accounts.filter((a: any) => a.status === 'found').length : 0;
+      const breachCount = Array.isArray(r.breaches) ? r.breaches.length : 0;
+      const nothing = !id.name && foundCount === 0 && breachCount === 0;
+
+      return (
+        <div>
+          {/* A blank report is the commonest outcome for an arbitrary
+              address, and "unknown / not established" on its own reads as
+              a broken tool. Say what was actually checked and what would
+              widen the net. */}
+          {nothing && (
+            <div className="px-2 py-2 mb-1 rounded-lg bg-[var(--hover-accent)] border border-[var(--border-primary)]">
+              <div className="text-[10px] font-mono font-bold tracking-wider text-[#FFD700] mb-1">
+                NOTHING PUBLIC FOUND FOR THIS ADDRESS
+              </div>
+              <div className="text-[9px] font-mono text-[var(--text-secondary)] leading-relaxed">
+                {led.answered ?? 0} of {led.queried ?? 0} sources answered and none held a record.
+                That is a real result, not a failure — most addresses have no public
+                footprint. The keyless tier can only see what is published.
+              </div>
+              {Array.isArray(led.skipped) && led.skipped.length > 0 && (
+                <div className="text-[9px] font-mono text-[var(--text-muted)] leading-relaxed mt-1.5">
+                  Not run: {led.skipped.map((s: any) => s.name).join(', ')}. Adding those keys is
+                  what surfaces names, phone numbers and profile links — the keyless
+                  sources do not carry them.
+                </div>
+              )}
+              {r.depth !== 'deep' && (
+                <div className="text-[9px] font-mono text-[var(--text-muted)] leading-relaxed mt-1.5">
+                  Try DEEP above — it adds the GitHub profile search, which is skipped at this depth.
+                </div>
+              )}
+            </div>
+          )}
+
+          <SectionHeader title="IDENTITY" icon={User} color={conf[id.confidence] || '#8A8A8A'} />
+          <ResultRow label="Name" value={id.name || 'Not established'} color={conf[id.confidence] || '#8A8A8A'} />
+          <ResultRow label="Confidence" value={String(id.confidence || 'unknown').toUpperCase()} color={conf[id.confidence] || '#8A8A8A'} />
+          {id.reasoning && (
+            <div className="text-[10px] font-mono text-[var(--text-secondary)] px-2 py-1.5 leading-relaxed">{id.reasoning}</div>
+          )}
+          {Array.isArray(id.candidates) && id.candidates.length > 1 && (
+            <div className="text-[9px] font-mono text-[var(--text-muted)] px-2 pb-1">
+              Other candidates: {id.candidates.slice(1).map((c: any) => `${c.name} (${c.sources.join('/')})`).join(' · ')}
+            </div>
+          )}
+
+          <SectionHeader title="ADDRESS" icon={Mail} color="#00E676" />
+          <ResultRow label="Deliverability" value={String(v.status || 'unknown').toUpperCase()} />
+          {v.reasoning && (
+            <div className="text-[10px] font-mono text-[var(--text-secondary)] px-2 py-1.5 leading-relaxed">{v.reasoning}</div>
+          )}
+          {v.mx?.length > 0 && <ResultRow label="MX" value={v.mx.slice(0, 3).join(', ')} />}
+          {v.roleAccount && <ResultRow label="Type" value="Role mailbox — not an individual" color="#FFD700" />}
+          {v.disposable && <ResultRow label="Provider" value="Disposable / throwaway" color="#FF6E40" />}
+          {v.freeProvider && <ResultRow label="Provider" value="Consumer mailbox provider" />}
+
+          {Array.isArray(r.accounts) && r.accounts.length > 0 && (
+            <>
+              <SectionHeader title={`ACCOUNTS (${r.accounts.length})`} icon={Fingerprint} color="#00E5FF" />
+              {r.accounts.map((a: any, i: number) => {
+                const tone = a.status === 'found' ? '#00E676'
+                  : a.status === 'blocked' ? '#E040FB'
+                  : a.status === 'error' ? '#FF6E40' : '#8A8A8A';
+                return (
+                  <div key={i} className="px-2 py-1.5 rounded hover:bg-[var(--hover-accent)]">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold" style={{ color: tone }}>
+                        {String(a.status).toUpperCase().replace('_', ' ')}
+                      </span>
+                      <span className="text-[11px] font-mono text-[var(--text-primary)]">{a.platform}</span>
+                      {a.url && (
+                        <a href={a.url} target="_blank" rel="noopener noreferrer" className="ml-auto">
+                          <ExternalLink className="w-3 h-3 text-[var(--text-muted)]" />
+                        </a>
+                      )}
+                    </div>
+                    {/* The evidence line is the point. A bare green tick
+                        is the confident-nonsense failure mode. */}
+                    {a.evidence && (
+                      <div className="text-[9px] font-mono text-[var(--text-muted)] mt-0.5 leading-relaxed">{a.evidence}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {Array.isArray(r.breaches) && r.breaches.length > 0 && (
+            <>
+              <SectionHeader title={`BREACHES (${r.breaches.length})`} icon={ShieldAlert} color="#E040FB" />
+              {r.breaches.map((b: any, i: number) => (
+                <div key={i} className="px-2 py-1.5 rounded hover:bg-[var(--hover-accent)]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono font-bold text-[#E040FB]">{b.name}</span>
+                    {b.date && <span className="text-[9px] font-mono text-[var(--text-muted)]">{b.date}</span>}
+                  </div>
+                  {b.classes?.length > 0 && (
+                    <div className="text-[9px] font-mono text-[var(--text-secondary)] mt-0.5">{b.classes.join(' · ')}</div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+
+          <SectionHeader title="CREDENTIAL RISK" icon={AlertTriangle} color={band[risk.band] || '#8A8A8A'} />
+          <ResultRow label="Score" value={`${risk.score ?? 0} / 100 — ${String(risk.band || '').toUpperCase()}`} color={band[risk.band] || '#8A8A8A'} />
+          {Array.isArray(risk.drivers) && risk.drivers.map((d: string, i: number) => (
+            <div key={i} className="text-[10px] font-mono text-[var(--text-secondary)] px-2 py-0.5">• {d}</div>
+          ))}
+          {risk.nextAction && (
+            <div className="text-[10px] font-mono text-[var(--text-primary)] px-2 py-1.5 mt-1 rounded bg-[var(--hover-accent)] leading-relaxed">
+              → {risk.nextAction}
+            </div>
+          )}
+
+          {/* Coverage. A clean result from a source that refused to
+              answer is not a clean subject, and this says so. */}
+          <SectionHeader title="SOURCE COVERAGE" icon={Radio} color="#8A8A8A" />
+          <ResultRow label="Queried" value={`${led.answered ?? 0} of ${led.queried ?? 0} answered`} />
+          {Array.isArray(led.failed) && led.failed.map((f: any, i: number) => (
+            <div key={i} className="text-[10px] font-mono text-[#FF6E40] px-2 py-0.5">✕ {f.name} — {f.reason}</div>
+          ))}
+          {Array.isArray(led.skipped) && led.skipped.map((s: any, i: number) => (
+            <div key={i} className="text-[10px] font-mono text-[var(--text-muted)] px-2 py-0.5">○ {s.name} — {s.reason}</div>
+          ))}
+        </div>
+      );
+    }
+
+    // ── IMAGE FORENSICS ──
+    if (activeTab === 'exif') {
+      return (
+        <div>
+          <SectionHeader title="IMAGE METADATA" icon={Camera} color="#40C4FF" />
+          {!r.hasExif && (
+            <div className="text-[10px] font-mono text-[var(--text-secondary)] px-2 py-1.5 leading-relaxed">
+              No EXIF metadata in this image.
+            </div>
+          )}
+          {r.make && <ResultRow label="Camera" value={`${r.make} ${r.model ?? ''}`.trim()} color="#40C4FF" />}
+          {r.lensModel && <ResultRow label="Lens" value={r.lensModel} />}
+          {r.serial && <ResultRow label="Body serial" value={r.serial} color="#FFD700" />}
+          {r.software && <ResultRow label="Software" value={r.software} />}
+          {r.dateTimeOriginal && <ResultRow label="Captured" value={r.dateTimeOriginal} />}
+          {r.artist && <ResultRow label="Artist" value={r.artist} color="#FFD700" />}
+          {r.copyright && <ResultRow label="Copyright" value={r.copyright} />}
+
+          {r.gps && (
+            <>
+              <SectionHeader title="GPS POSITION" icon={MapPin} color="#00E676" />
+              <ResultRow label="Latitude" value={String(r.gps.lat)} color="#00E676" />
+              <ResultRow label="Longitude" value={String(r.gps.lng)} color="#00E676" />
+              {r.gps.altitude !== null && <ResultRow label="Altitude" value={`${r.gps.altitude} m`} />}
+              <div className="text-[9px] font-mono text-[var(--text-muted)] px-2 py-1">Raw: {r.gps.raw}</div>
+            </>
+          )}
+
+          {Array.isArray(r.notes) && r.notes.map((n: string, i: number) => (
+            <div key={i} className="text-[10px] font-mono text-[var(--text-secondary)] px-2 py-1 leading-relaxed">{n}</div>
+          ))}
+        </div>
+      );
+    }
+
+    // ── WIFI GEOLOCATE ──
+    if (activeTab === 'wigle') {
+      return (
+        <div>
+          <SectionHeader title={`NETWORKS (${r.returned ?? 0} of ${r.total ?? 0})`} icon={WifiIcon} color="#76FF03" />
+          <ResultRow label="Matched on" value={String(r.matchedOn || '').toUpperCase()} />
+          {Array.isArray(r.networks) && r.networks.map((n: any, i: number) => (
+            <div key={i} className="px-2 py-1.5 rounded hover:bg-[var(--hover-accent)]">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono font-bold text-[#76FF03]">{n.ssid || '(hidden)'}</span>
+                <span className="text-[9px] font-mono text-[var(--text-muted)]">{n.bssid}</span>
+              </div>
+              <div className="text-[9px] font-mono text-[var(--text-secondary)] mt-0.5">
+                {[n.city, n.region, n.country].filter(Boolean).join(', ')}
+                {n.lat != null && ` · ${n.lat}, ${n.lng}`}
+                {n.encryption && ` · ${n.encryption}`}
+              </div>
+            </div>
+          ))}
+          <div className="text-[9px] font-mono text-[var(--text-muted)] px-2 py-1.5 leading-relaxed">
+            Positions are crowd-sourced historical sightings, not live locations.
+          </div>
+        </div>
+      );
+    }
+
+    // ── FILE / URL REPUTATION ──
+    if (activeTab === 'virustotal') {
+      const d = r.detections ?? {};
+      const bad = (d.malicious ?? 0) > 0;
+      return (
+        <div>
+          <SectionHeader title="REPUTATION" icon={FileSearch} color={bad ? '#FF1744' : '#00E676'} />
+          {r.found === false ? (
+            <div className="text-[10px] font-mono text-[var(--text-secondary)] px-2 py-1.5 leading-relaxed">{r.detail}</div>
+          ) : (
+            <>
+              <ResultRow label="Verdict" value={r.summary} color={bad ? '#FF1744' : '#00E676'} />
+              <ResultRow label="Malicious" value={String(d.malicious ?? 0)} color={bad ? '#FF1744' : undefined} />
+              <ResultRow label="Suspicious" value={String(d.suspicious ?? 0)} />
+              <ResultRow label="Harmless" value={String(d.harmless ?? 0)} />
+              {r.meaningfulName && <ResultRow label="Name" value={r.meaningfulName} />}
+              {r.fileType && <ResultRow label="Type" value={r.fileType} />}
+              {r.registrar && <ResultRow label="Registrar" value={r.registrar} />}
+              {r.asOwner && <ResultRow label="AS owner" value={r.asOwner} />}
+              {r.permalink && (
+                <a href={r.permalink} target="_blank" rel="noopener noreferrer"
+                   className="text-[10px] font-mono text-[var(--cyan-primary)] px-2 py-1 inline-flex items-center gap-1">
+                  Open in VirusTotal <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </>
+          )}
+        </div>
+      );
+    }
+
+    // ── CARD BIN ──
+    if (activeTab === 'bin') {
+      return (
+        <div>
+          <SectionHeader title="ISSUER" icon={CreditCard} color="#FFD54F" />
+          {r.found === false ? (
+            <div className="text-[10px] font-mono text-[var(--text-secondary)] px-2 py-1.5">{r.detail}</div>
+          ) : (
+            <>
+              <ResultRow label="Bank" value={r.bank || 'Unknown'} color="#FFD54F" />
+              <ResultRow label="Scheme" value={String(r.scheme || '').toUpperCase()} />
+              <ResultRow label="Type" value={[r.type, r.brand].filter(Boolean).join(' · ') || 'Unknown'} />
+              <ResultRow label="Country" value={[r.country, r.countryCode].filter(Boolean).join(' ')} />
+              {r.prepaid !== null && <ResultRow label="Prepaid" value={r.prepaid ? 'Yes' : 'No'} />}
+              {r.bankPhone && <ResultRow label="Bank phone" value={r.bankPhone} />}
+              <div className="text-[9px] font-mono text-[var(--text-muted)] px-2 py-1.5 leading-relaxed">
+                Identifies the issuing bank only. It says nothing about the cardholder.
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
 
     // ── DNS ──
     if (activeTab === 'dns') {
@@ -1256,14 +1613,21 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
               <div className="flex flex-col gap-0.5">
                 {tools.map(tab => {
                   const active = activeTab === tab.id;
+                  // Unavailable tools stay selectable — the analyst can
+                  // still read what the tool is and what it needs — but
+                  // they are visibly dimmed and carry the reason here,
+                  // BEFORE any typing.
+                  const blocked = unavailableReason(tab.id);
                   return (
                     <button
                       key={tab.id}
                       onClick={() => selectTool(tab.id)}
+                      title={blocked ?? tab.blurb}
                       className="group flex items-start gap-2.5 px-2 py-1.5 rounded-lg border text-left transition-all"
                       style={{
                         borderColor: active ? `${tab.color}55` : 'transparent',
                         background: active ? `${tab.color}14` : undefined,
+                        opacity: blocked ? 0.45 : 1,
                       }}
                     >
                       <tab.icon
@@ -1271,14 +1635,21 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
                         style={{ color: active ? tab.color : 'var(--text-muted)' }}
                       />
                       <span className="min-w-0">
-                        <span
-                          className="block text-[10px] font-mono font-bold tracking-wider leading-tight"
-                          style={{ color: active ? tab.color : 'var(--text-secondary)' }}
-                        >
-                          {tab.label}
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            className="block text-[10px] font-mono font-bold tracking-wider leading-tight"
+                            style={{ color: active ? tab.color : 'var(--text-secondary)' }}
+                          >
+                            {tab.label}
+                          </span>
+                          {blocked && (
+                            <span className="text-[8px] font-mono tracking-wider px-1 py-px rounded bg-[#FF6E40]/15 text-[#FF6E40] flex-shrink-0">
+                              {caps?.[tab.id]?.tier === 2 ? 'KEY NEEDED' : 'UNAVAILABLE'}
+                            </span>
+                          )}
                         </span>
                         <span className="block text-[10px] font-mono text-[var(--text-muted)] leading-snug">
-                          {tab.blurb}
+                          {blocked ?? tab.blurb}
                         </span>
                       </span>
                     </button>
@@ -1331,7 +1702,10 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
               >
                 <div className="flex items-center gap-3">
                   <tab.icon className="w-5 h-5" style={{ color: tab.color }} />
-                  <span className="font-mono font-bold tracking-[0.1em] text-[10px]" style={{ color: tab.color }}>GLOBAL SWEEP</span>
+                  {/* Was "GLOBAL SWEEP", which promised something this does
+                      not do. It sweeps ONE subnet (/24-/32) around an IP you
+                      give it and plots the hosts that answer. */}
+                  <span className="font-mono font-bold tracking-[0.1em] text-[10px]" style={{ color: tab.color }}>SUBNET SWEEP</span>
                 </div>
             </button>
           ))}
@@ -1364,6 +1738,20 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
             )}
           </div>
 
+          {/* Legend. Without it a dimmed tile is ambiguous — it was read as
+              "active" rather than "locked", which is the opposite of what it
+              means, and sent an operator to the six tools that cannot run. */}
+          {caps && lockedCount > 0 && (
+            <div className="flex items-center gap-1.5 mb-1.5 px-0.5 text-[9px] font-mono text-[var(--text-muted)] leading-snug">
+              <span className="flex items-center justify-center w-3 h-3 rounded-full bg-[#1a1a1a] border border-[#666] flex-shrink-0">
+                <Lock className="w-2 h-2 text-[#999]" />
+              </span>
+              <span>
+                <span className="text-[var(--text-secondary)]">{lockedCount} greyed out</span> — needs a key or a backend. The rest work now.
+              </span>
+            </div>
+          )}
+
           {GROUPS.map(group => {
             const tools = TABS.filter(t => t.group === group.id && t.id !== 'sweep' && matchesFilter(t));
             if (!tools.length) return null;
@@ -1371,15 +1759,36 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
               <div key={group.id} className="mb-2 last:mb-0">
                 <div className="text-[9px] font-mono tracking-[0.18em] text-[var(--text-secondary)] mb-1">{group.label}</div>
                 <div className="grid grid-cols-4 gap-1">
-                  {tools.map(tab => (
-                    <button key={tab.id} onClick={() => selectTool(tab.id)}
-                      title={tab.blurb}
-                      className={`flex flex-col items-center gap-1 px-1 py-2 rounded-lg text-[9px] font-mono tracking-wider transition-all border ${activeTab === tab.id ? 'border-opacity-40 bg-opacity-15' : 'border-transparent hover:bg-[var(--hover-accent)]'}`}
-                      style={{ borderColor: activeTab === tab.id ? tab.color : 'transparent', backgroundColor: activeTab === tab.id ? `${tab.color}15` : undefined, color: activeTab === tab.id ? tab.color : 'var(--text-secondary)' }}>
-                      <tab.icon className="w-3.5 h-3.5" />
-                      <span className="leading-tight text-center w-full">{tab.label}</span>
-                    </button>
-                  ))}
+                  {tools.map(tab => {
+                    const blocked = unavailableReason(tab.id);
+                    return (
+                      <button key={tab.id} onClick={() => selectTool(tab.id)}
+                        title={blocked ? `NEEDS SETUP — ${blocked}` : tab.blurb}
+                        className={`relative flex flex-col items-center gap-1 px-1 py-2 rounded-lg text-[9px] font-mono tracking-wider transition-all border ${activeTab === tab.id ? 'border-opacity-40 bg-opacity-15' : 'border-transparent hover:bg-[var(--hover-accent)]'}`}
+                        style={{
+                          borderColor: activeTab === tab.id ? tab.color : 'transparent',
+                          backgroundColor: activeTab === tab.id ? `${tab.color}15` : undefined,
+                          color: activeTab === tab.id ? tab.color : 'var(--text-secondary)',
+                          // Greyscale + heavy dim. An amber dot alone read as
+                          // "on" — it is the colour this UI uses for LIVE
+                          // everywhere else — so the state is now carried by
+                          // desaturation and a padlock, not by a hue.
+                          opacity: blocked ? 0.32 : 1,
+                          filter: blocked ? 'grayscale(1)' : undefined,
+                        }}>
+                        <tab.icon className="w-3.5 h-3.5" />
+                        <span className="leading-tight text-center w-full">{tab.label}</span>
+                        {blocked && (
+                          <span
+                            className="absolute top-0.5 right-0.5 flex items-center justify-center w-3 h-3 rounded-full bg-[#1a1a1a] border border-[#666]"
+                            style={{ filter: 'grayscale(0)' }}
+                          >
+                            <Lock className="w-2 h-2 text-[#999]" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -1444,11 +1853,40 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
           </div>
         )}
 
+        {/* A selected tool that cannot run says so here, with what it
+            needs. This is the on-screen half of the fix for six tools
+            that used to accept a query and then fail with 503. */}
+        {currentTab && unavailableReason(activeTab) && (
+          <div className="flex items-start gap-1.5 px-2 py-1.5 rounded-lg bg-[#FF6E40]/10 border border-[#FF6E40]/30">
+            <AlertTriangle className="w-3 h-3 text-[#FF6E40] mt-px flex-shrink-0" />
+            <div className="min-w-0">
+              <div className="text-[9px] font-mono font-bold tracking-wider text-[#FF6E40]">
+                NOT AVAILABLE IN THIS INSTALL
+              </div>
+              <div className="text-[9px] font-mono text-[var(--text-secondary)] leading-snug mt-0.5">
+                {unavailableReason(activeTab)}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Secondary Controls */}
         {activeTab === 'scanner' && (
           <select value={scanType} onChange={e => setScanType(e.target.value)}
             className="bg-[var(--bg-primary)]/60 border border-[var(--border-primary)] rounded-lg px-2 py-1.5 text-[11px] font-mono text-[var(--text-primary)] outline-none w-full">
             <option value="quick">QUICK SCAN</option><option value="deep">DEEP SCAN</option><option value="ports">TOP 1000 PORTS</option>
+          </select>
+        )}
+
+        {/* How wide the email investigation fans out. `deep` adds the
+            GitHub user search, which is capped at 10 requests/minute
+            unauthenticated and is the first thing to rate-limit. */}
+        {activeTab === 'email' && (
+          <select value={emailDepth} onChange={e => setEmailDepth(e.target.value as 'quick' | 'standard' | 'deep')}
+            className="bg-[var(--bg-primary)]/60 border border-[var(--border-primary)] rounded-lg px-2 py-1.5 text-[11px] font-mono text-[var(--text-primary)] outline-none w-full">
+            <option value="quick">QUICK — avatar and breaches</option>
+            <option value="standard">STANDARD — adds PGP keyservers</option>
+            <option value="deep">DEEP — adds GitHub search (rate-limited)</option>
           </select>
         )}
         {activeTab === 'sweep' && (
