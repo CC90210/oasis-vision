@@ -43,7 +43,7 @@ export async function GET(req: Request) {
 
   // One investigation fans out to several upstreams, so this uses the
   // stricter budget the username route uses rather than the default 20.
-  if (isRateLimited(getClientIp(req), 6, 60_000)) {
+  if (isRateLimited(getClientIp(req), 6, 60_000, 'email')) {
     return NextResponse.json(
       { error: 'Rate limit exceeded', detail: 'Maximum 6 investigations per minute.' },
       { status: 429 },

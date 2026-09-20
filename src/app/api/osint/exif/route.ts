@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isRateLimited, getClientIp, validateHost } from '@/lib/ssrf-guard';
+import { isRateLimited, getClientIp, validateHost, safeFetch } from '@/lib/ssrf-guard';
 import { parseExif } from '@/lib/forensics/exif';
 import { recordReconQuery } from '@/lib/recon-audit';
 
@@ -30,7 +30,7 @@ function geoFrom(result: ReturnType<typeof parseExif>, label: string) {
 }
 
 export async function POST(req: Request) {
-  if (isRateLimited(getClientIp(req), 12, 60_000)) {
+  if (isRateLimited(getClientIp(req), 12, 60_000, 'exif')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 
@@ -74,7 +74,7 @@ export async function GET(req: Request) {
       { status: 400 },
     );
   }
-  if (isRateLimited(getClientIp(req), 12, 60_000)) {
+  if (isRateLimited(getClientIp(req), 12, 60_000, 'exif')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 
@@ -98,10 +98,15 @@ export async function GET(req: Request) {
   }
 
   try {
-    const res = await fetch(parsed.toString(), {
+    // safeFetch, NOT fetch with redirect:'follow'. Validating the host
+    // once and then following redirects checks only the first hop: a
+    // public URL answering 302 -> http://169.254.169.254/ would sail
+    // past the guard above and hand back cloud metadata. safeFetch
+    // re-validates every hop, which is why it exists.
+    const res = await safeFetch(parsed.toString(), {
       headers: { 'User-Agent': 'OASIS-VISION/1.0 (+https://github.com/CC90210/oasis-vision)' },
       signal: AbortSignal.timeout(15000),
-      redirect: 'follow',
+      maxRedirects: 3,
     });
     if (!res.ok) {
       return NextResponse.json({ error: `Image fetch returned HTTP ${res.status}` }, { status: 502 });

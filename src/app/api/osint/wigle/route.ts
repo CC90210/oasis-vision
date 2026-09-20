@@ -56,7 +56,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Query too long' }, { status: 400 });
   }
 
-  if (isRateLimited(getClientIp(req), 8, 60_000)) {
+  if (isRateLimited(getClientIp(req), 8, 60_000, 'wigle')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

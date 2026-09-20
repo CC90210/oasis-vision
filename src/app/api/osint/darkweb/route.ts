@@ -58,7 +58,7 @@ export async function GET(req: Request) {
   }
 
   // Crawling is expensive and slow; the budget is tighter than anything else here.
-  if (isRateLimited(getClientIp(req), 3, 300_000)) {
+  if (isRateLimited(getClientIp(req), 3, 300_000, 'darkweb')) {
     return NextResponse.json(
       { error: 'Rate limit exceeded', detail: 'Maximum 3 onion crawls per 5 minutes.' },
       { status: 429 },

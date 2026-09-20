@@ -218,14 +218,33 @@ export async function safeFetch(
 // In-memory rate limiting per-isolate for basic proxy abuse prevention
 const rateMap = new Map<string, { count: number; resetAt: number }>();
 
-export function isRateLimited(ip: string, limit: number = 20, windowMs: number = 60_000): boolean {
+/**
+ * Per-caller request budget.
+ *
+ * `bucket` namespaces the counter. Without it every route shared one
+ * entry keyed on IP alone, which was inert only while all 19 call sites
+ * happened to use the same 60s window: the first route to open an entry
+ * set `resetAt` for everyone. The onion-crawl route uses a deliberate
+ * 5-minute window, so one call there would have locked every other
+ * RECON tool out for five minutes.
+ *
+ * Namespacing only ever loosens a bucket, never tightens one, so no
+ * caller starts getting 429s that did not before.
+ */
+export function isRateLimited(
+  ip: string,
+  limit: number = 20,
+  windowMs: number = 60_000,
+  bucket: string = 'default',
+): boolean {
   const now = Date.now();
   for (const [key, entry] of rateMap) {
     if (now > entry.resetAt) rateMap.delete(key);
   }
-  const entry = rateMap.get(ip);
+  const mapKey = `${bucket}:${ip}`;
+  const entry = rateMap.get(mapKey);
   if (!entry || now > entry.resetAt) {
-    rateMap.set(ip, { count: 1, resetAt: now + windowMs });
+    rateMap.set(mapKey, { count: 1, resetAt: now + windowMs });
     return false;
   }
   entry.count++;

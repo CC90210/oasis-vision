@@ -77,7 +77,7 @@ export async function GET(req: Request) {
 
   // Below VT's own free-tier ceiling of 4/min, so the analyst hits our
   // limit with a clear message instead of their opaque 429.
-  if (isRateLimited(getClientIp(req), 3, 60_000)) {
+  if (isRateLimited(getClientIp(req), 3, 60_000, 'virustotal')) {
     return NextResponse.json(
       { error: 'Rate limit exceeded', detail: 'VirusTotal free tier allows 4 lookups per minute.' },
       { status: 429 },

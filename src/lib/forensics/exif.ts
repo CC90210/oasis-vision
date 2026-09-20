@@ -77,6 +77,13 @@ const GPS_TAGS: Record<number, string> = {
 /** Bytes per component, indexed by EXIF type code. */
 const TYPE_SIZE: Record<number, number> = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 9: 4, 10: 8 };
 
+/**
+ * Longest ASCII tag we will read. Real camera strings are tens of
+ * bytes; the cap exists so a crafted `count` cannot turn a large upload
+ * into a response several times its size.
+ */
+const MAX_ASCII_TAG = 4096;
+
 interface Reader {
   u16(o: number): number;
   u32(o: number): number;
@@ -133,13 +140,21 @@ function readValue(
   switch (type) {
     case 2: {
       // ASCII, NUL-terminated.
+      //
+      // Capped. `count` is attacker-controlled and bounded only by the
+      // file, so a 25 MB upload declaring one enormous ASCII tag
+      // produced a ~25M-character string and a ~50 MB JSON response —
+      // measured at 200 KB in and 400 KB out, which scales linearly.
+      // No real EXIF string is anywhere near this; anything longer is
+      // malformed or hostile, and is truncated rather than echoed.
+      const limit = Math.min(count, MAX_ASCII_TAG);
       let s = '';
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < limit; i++) {
         const c = view.getUint8(valueOffset + i);
         if (c === 0) break;
         s += String.fromCharCode(c);
       }
-      return s.trim();
+      return count > MAX_ASCII_TAG ? `${s.trim()}… [truncated from ${count} bytes]` : s.trim();
     }
     case 1:
     case 7:

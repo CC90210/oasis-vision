@@ -48,7 +48,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'A BIN is at least 6 digits' }, { status: 400 });
   }
 
-  if (isRateLimited(getClientIp(req), 10, 60_000)) {
+  if (isRateLimited(getClientIp(req), 10, 60_000, 'bin')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 
