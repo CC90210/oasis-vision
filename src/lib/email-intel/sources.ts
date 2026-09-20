@@ -327,6 +327,72 @@ export async function probeBreaches(email: string, timeoutMs = 15000): Promise<S
 }
 
 /**
+ * Candidate handles derived from an address.
+ *
+ * `jane.doe+news@…` yields `jane.doe` and `janedoe`. This is the
+ * single highest-yield keyless move available: most people reuse the
+ * local part of their address as a handle, and this repo already has a
+ * working 481-site username scanner. It is a LEAD, not proof — the
+ * account belongs to whoever registered that handle, who may not be
+ * the address owner, and every finding says so.
+ */
+export function candidateHandles(email: string): string[] {
+  const local = email.split('@')[0].toLowerCase().split('+')[0];
+  const out = new Set<string>();
+  if (local.length >= 3) out.add(local);
+  const stripped = local.replace(/[._-]/g, '');
+  if (stripped.length >= 3 && stripped !== local) out.add(stripped);
+  // Purely numeric or role-ish handles are noise, not identity.
+  return [...out].filter((h) => h.length >= 3 && h.length <= 32 && !/^\d+$/.test(h));
+}
+
+/**
+ * Run the derived handles through the existing Sherlock scanner.
+ *
+ * Imported lazily so the email module does not drag the 481-site
+ * database into every request that never needs it.
+ */
+export async function probeHandles(email: string): Promise<SourceResult> {
+  const source = 'Username reuse';
+  const handles = candidateHandles(email);
+  if (!handles.length) return { source, failure: 'skipped: no usable handle in the local part' };
+
+  try {
+    const { scanUsername } = await import('@/lib/sherlock');
+    const handle = handles[0];
+    const scan = await scanUsername(handle, {
+      limit: 60,
+      concurrency: 14,
+      timeoutMs: 6000,
+      verify: true,
+    });
+
+    const accounts: AccountFinding[] = (scan.found ?? []).slice(0, 25).map((s) => ({
+      platform: s.site,
+      url: s.url,
+      status: 'inconclusive' as const,
+      evidence:
+        `Handle "${handle}" (from the address local part) exists on ${s.site}. ` +
+        `Handle reuse is a lead, not proof the address owner registered it.`,
+    }));
+
+    const blocked = (scan.blocked ?? []).length;
+    if (blocked) {
+      accounts.push({
+        platform: `${blocked} platforms`,
+        url: null,
+        status: 'blocked',
+        evidence: `${blocked} sites refused the check, so their answer is unknown rather than negative.`,
+      });
+    }
+
+    return { source, accounts };
+  } catch (e) {
+    return { source, failure: e instanceof Error ? e.message : 'handle scan failed' };
+  }
+}
+
+/**
  * HIBP — Tier 2, requires a paid key. Skipped cleanly when absent
  * rather than failing, so its absence never looks like a dead source.
  */

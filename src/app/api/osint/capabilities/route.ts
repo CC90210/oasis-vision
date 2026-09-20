@@ -45,7 +45,7 @@ export async function GET() {
   const scannerConfigured = Boolean(process.env.SCANNER_URL && process.env.SCANNER_KEY);
   const scannerReason = scannerConfigured
     ? null
-    : 'Active scanning needs a separate scanner backend, which does not ship with OASIS VISION. Set SCANNER_URL and SCANNER_KEY to enable.';
+    : 'Port and vulnerability scanning send traffic at the target, so they need a separate backend that does not ship with OASIS VISION. The passive checks (SSL/TLS, HEADERS, TECH DETECT, SUBDOMAINS) work without it.';
 
   // Tier 1 tools are keyless and always available. Listing them
   // explicitly means the panel never has to assume.
@@ -53,6 +53,9 @@ export async function GET() {
     'email', 'exif', 'bin', 'dns', 'whois', 'certs', 'ip', 'bgp', 'mac',
     'phone', 'username', 'github', 'leaks', 'threats', 'infostealer',
     'crypto', 'sanctions', 'cve', 'sweep', 'shodan',
+    // Served natively by /api/scanner since the websec module landed —
+    // a TLS handshake, one GET, and crt.sh. No backend, no key.
+    'ssl', 'headers', 'tech', 'subdomains',
   ];
 
   const capabilities: Capability[] = [
@@ -61,8 +64,11 @@ export async function GET() {
     keyed('wigle', ['WIGLE_API_KEY'], 'WiFi geolocation'),
     keyed('virustotal', ['VIRUSTOTAL_API_KEY'], 'File/URL reputation'),
 
-    // The six that share the scanner backend.
-    ...['scanner', 'vuln', 'ssl', 'subdomains', 'headers', 'tech'].map((id): Capability => ({
+    // Only the genuinely ACTIVE scans still need the backend. Port
+    // sweeps and vulnerability probing send traffic at someone else's
+    // host; the passive checks that used to be lumped in with them are
+    // native now and listed above.
+    ...['scanner', 'vuln'].map((id): Capability => ({
       id,
       tier: 3,
       available: scannerConfigured,

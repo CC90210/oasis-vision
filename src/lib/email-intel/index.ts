@@ -25,6 +25,7 @@ import {
   probeGitHub,
   probeBreaches,
   probeHibp,
+  probeHandles,
 } from './sources';
 import type {
   EmailInvestigation,
@@ -57,7 +58,14 @@ function plan(depth: InvestigationDepth) {
   ];
   if (depth === 'quick') return base;
 
-  const standard = [...base, { name: 'PGP keyserver', run: probePgp }];
+  // The handle pivot is where most real findings come from — an
+  // address with no Gravatar and no breach still usually has a handle
+  // in use somewhere — so it runs from `standard` upward.
+  const standard = [
+    ...base,
+    { name: 'PGP keyserver', run: probePgp },
+    { name: 'Username reuse', run: probeHandles },
+  ];
   if (depth === 'standard') return standard;
 
   return [

@@ -1,5 +1,13 @@
 import { NextResponse } from 'next/server';
 import { validateHost, isRateLimited, getClientIp } from '@/lib/ssrf-guard';
+import {
+  toHostname,
+  inspectTls,
+  auditHeaders,
+  fingerprint,
+  enumerateSubdomains,
+  fetchForAnalysis,
+} from '@/lib/websec';
 
 /**
  * OASIS VISION — Scanner Proxy (Hardened)
@@ -36,10 +44,41 @@ const ALLOWED_SCANS: Record<string, { endpoint: string; timeout: number }> = {
 //   traceroute → reveals hosting infrastructure
 //   ports    → arbitrary port range scanning
 
+/**
+ * Scan types served natively, with no backend.
+ *
+ * These four used to 503 on every install because they proxied to a
+ * scanner service that does not ship with this repo. None of them
+ * needed one: each is a passive observation a browser makes anyway —
+ * a TLS handshake, one GET, or a read of public certificate
+ * transparency logs. They now work out of the box.
+ *
+ * `quick` and `vuln` are NOT here. Port sweeps and vulnerability
+ * probing are active scanning against someone else's host, which is a
+ * different activity with different authorisation needs, and they
+ * still require the separate backend.
+ */
+const NATIVE_SCANS = new Set(['ssl', 'headers', 'tech', 'subdomains']);
+
 export async function GET(req: Request) {
-  // 1. Check scanner is configured
-  if (!SCANNER_KEY) {
-    return NextResponse.json({ error: 'Scanner not configured', hint: 'Set SCANNER_URL and SCANNER_KEY in .env' }, { status: 503 });
+  const early = new URL(req.url).searchParams;
+  const earlyType = early.get('type') || 'quick';
+
+  // 1. The backend is only needed for the active scans. Checking the
+  //    key before the native branch is what made ssl/headers/tech/
+  //    subdomains unreachable even though they never used it.
+  if (!SCANNER_KEY && !NATIVE_SCANS.has(earlyType)) {
+    return NextResponse.json(
+      {
+        error: 'Active scanning is not configured',
+        detail:
+          'Port and vulnerability scanning need a separate scanner backend, which does not ship with OASIS VISION. ' +
+          'SSL/TLS, HEADERS, TECH DETECT and SUBDOMAINS work without it.',
+        hint: 'Set SCANNER_URL and SCANNER_KEY to enable active scanning.',
+        native_scans: [...NATIVE_SCANS],
+      },
+      { status: 503 },
+    );
   }
 
   // 2. Rate limit by client IP
@@ -71,7 +110,40 @@ export async function GET(req: Request) {
     }, { status: 403 });
   }
 
-  // 5. Validate scan type (only safe scans allowed)
+  // 5a. Native scans: answered here, no backend involved.
+  if (NATIVE_SCANS.has(scanType)) {
+    const host = toHostname(target);
+    if (!host) {
+      return NextResponse.json({ error: 'Could not read a hostname from that input' }, { status: 400 });
+    }
+    try {
+      if (scanType === 'ssl') {
+        return NextResponse.json(await inspectTls(host), { headers: { 'Cache-Control': 'no-store' } });
+      }
+      if (scanType === 'subdomains') {
+        return NextResponse.json(await enumerateSubdomains(host), { headers: { 'Cache-Control': 'no-store' } });
+      }
+      const page = await fetchForAnalysis(target);
+      if (scanType === 'headers') {
+        return NextResponse.json(auditHeaders(page.url, page.status, page.headers), {
+          headers: { 'Cache-Control': 'no-store' },
+        });
+      }
+      return NextResponse.json(fingerprint(page.url, page.status, page.headers, page.html), {
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    } catch (e) {
+      // Named, not swallowed: a TLS failure and an unreachable host are
+      // different answers and the analyst needs to tell them apart.
+      console.error(`[OASIS] native ${scanType} scan failed for ${host}:`, e);
+      return NextResponse.json(
+        { error: `${scanType} check failed`, detail: e instanceof Error ? e.message : 'unknown', target: host },
+        { status: 502 },
+      );
+    }
+  }
+
+  // 5b. Validate scan type (only safe scans allowed)
   const scanConfig = ALLOWED_SCANS[scanType];
   if (!scanConfig) {
     return NextResponse.json({
