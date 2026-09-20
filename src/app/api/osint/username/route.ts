@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 import { scanUsername, isValidUsername } from '@/lib/sherlock';
+import { recordReconQuery } from '@/lib/recon-audit';
 
 /**
  * OASIS VISION — Username enumeration across social platforms.
@@ -32,7 +33,7 @@ export async function GET(req: Request) {
 
   // Each scan fans out to dozens of upstreams, so this is stricter than the
   // other OSINT routes.
-  if (isRateLimited(getClientIp(req), 6, 60_000)) {
+  if (isRateLimited(getClientIp(req), 6, 60_000, 'username')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 
@@ -42,6 +43,16 @@ export async function GET(req: Request) {
   // A full sweep has to fit the request budget; concurrency rises with breadth
   // but stays bounded so the connection pool survives.
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 200) : all ? 200 : undefined;
+
+  // Logged on attempt, not on success: the audit question is which
+  // subjects this console queried, and a lookup whose upstream failed
+  // still means the subject was submitted and transmitted.
+  recordReconQuery({
+    tool: 'username',
+    subject: username,
+    purpose: searchParams.get('purpose') || 'unspecified',
+    tier: 1,
+  });
 
   try {
     const scan = await scanUsername(username, {

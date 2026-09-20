@@ -23,7 +23,7 @@ const ALLOWED_TYPES = new Set(['aircraft', 'vessel', 'company', 'person', 'ip', 
 
 export async function GET(req: Request) {
   const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp, 30, 60_000)) {
+  if (isRateLimited(clientIp, 30, 60_000, 'entity-expand')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

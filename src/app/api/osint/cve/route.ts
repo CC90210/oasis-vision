@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   if (!cve) return NextResponse.json({ error: 'Missing cve parameter' }, { status: 400 });
 
   const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp, 30, 60_000)) {
+  if (isRateLimited(clientIp, 30, 60_000, 'cve')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

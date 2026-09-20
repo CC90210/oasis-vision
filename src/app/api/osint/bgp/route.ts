@@ -9,7 +9,7 @@ export async function GET(req: Request) {
   if (!query) return NextResponse.json({ error: 'Missing query parameter (IP, ASN number, or prefix)' }, { status: 400 });
 
   const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp, 20, 60_000)) {
+  if (isRateLimited(clientIp, 20, 60_000, 'bgp')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

@@ -1,10 +1,21 @@
 import { NextResponse } from 'next/server';
+import { recordReconQuery } from '@/lib/recon-audit';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const username = searchParams.get('user');
 
   if (!username) return NextResponse.json({ error: 'Missing username parameter' }, { status: 400 });
+
+  // Logged on attempt, not on success: the audit question is which
+  // subjects this console queried, and a lookup whose upstream failed
+  // still means the subject was submitted and transmitted.
+  recordReconQuery({
+    tool: 'github',
+    subject: username,
+    purpose: searchParams.get('purpose') || 'unspecified',
+    tier: 1,
+  });
 
   try {
     const [userRes, reposRes] = await Promise.all([

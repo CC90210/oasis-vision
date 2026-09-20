@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 import { search, type Schema } from '@/lib/sanctions';
+import { recordReconQuery } from '@/lib/recon-audit';
 
 // Standalone OFAC SDN search (free, no key) backed by the OpenSanctions
 // `us_ofac_sdn` mirror. Substring + alias-aware match, schema-filterable.
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
   }
 
   const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp, 20, 60_000)) {
+  if (isRateLimited(clientIp, 20, 60_000, 'sanctions')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 
@@ -45,6 +46,16 @@ export async function GET(req: Request) {
     }
     schema = schemaParam as Schema;
   }
+
+  // Logged on attempt, not on success: the audit question is which
+  // subjects this console queried, and a lookup whose upstream failed
+  // still means the subject was submitted and transmitted.
+  recordReconQuery({
+    tool: 'sanctions',
+    subject: query,
+    purpose: searchParams.get('purpose') || 'unspecified',
+    tier: 1,
+  });
 
   try {
     const matches = await search(query, { schema, limit });

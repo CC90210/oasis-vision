@@ -7,7 +7,7 @@ export async function GET(req: Request) {
   const query = searchParams.get('query'); // Optional: IP or domain to check
   
   const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp, 20, 60_000)) {
+  if (isRateLimited(clientIp, 20, 60_000, 'threats')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
   

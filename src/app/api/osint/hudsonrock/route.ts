@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { recordReconQuery } from '@/lib/recon-audit';
 
 /**
  * OASIS VISION — Hudson Rock Infostealer Intelligence
@@ -55,6 +56,16 @@ export async function GET(req: Request) {
   const type: AssetType = forced && ENDPOINTS[forced] ? forced : detectAssetType(query);
   const { path, param } = ENDPOINTS[type];
   const url = `${BASE}/${path}?${param}=${encodeURIComponent(query)}`;
+
+  // Logged on attempt, not on success: the audit question is which
+  // subjects this console queried, and a lookup whose upstream failed
+  // still means the subject was submitted and transmitted.
+  recordReconQuery({
+    tool: 'infostealer',
+    subject: query,
+    purpose: searchParams.get('purpose') || 'unspecified',
+    tier: 1,
+  });
 
   try {
     // A domain lookup aggregates every compromised machine touching that

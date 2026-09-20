@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const days = Math.min(120, Math.max(1, Number(searchParams.get('days')) || 30));
   const force = searchParams.get('refresh') === '1';
 
-  if (isRateLimited(getClientIp(req), 30, 60_000)) {
+  if (isRateLimited(getClientIp(req), 30, 60_000, 'chain-daily')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

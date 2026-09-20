@@ -83,7 +83,7 @@ export async function GET(req: Request) {
 
   // 2. Rate limit by client IP
   const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp, 5, 60_000)) {
+  if (isRateLimited(clientIp, 5, 60_000, 'scanner')) {
     return NextResponse.json({
       error: 'Rate limit exceeded',
       detail: `Maximum 5 scans per minute. Please wait before scanning again.`,

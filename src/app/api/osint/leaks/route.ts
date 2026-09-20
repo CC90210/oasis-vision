@@ -1,10 +1,21 @@
 import { NextResponse } from 'next/server';
+import { recordReconQuery } from '@/lib/recon-audit';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const email = searchParams.get('email');
 
   if (!email) return NextResponse.json({ error: 'Missing email parameter' }, { status: 400 });
+
+  // Logged on attempt, not on success: the audit question is which
+  // subjects this console queried, and a lookup whose upstream failed
+  // still means the subject was submitted and transmitted.
+  recordReconQuery({
+    tool: 'leaks',
+    subject: email,
+    purpose: searchParams.get('purpose') || 'unspecified',
+    tier: 1,
+  });
 
   try {
     // We will call the breach-analytics endpoint to get deep details on what exactly was leaked.

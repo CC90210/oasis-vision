@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { PhoneNumberUtil, PhoneNumberFormat, PhoneNumberType } from 'google-libphonenumber';
 import { lookupAreaCode, isNonGeographic } from '@/lib/nanp';
+import { recordReconQuery } from '@/lib/recon-audit';
 
 const phoneUtil = PhoneNumberUtil.getInstance();
 const REGION_NAMES = new Intl.DisplayNames(['en'], { type: 'region' });
@@ -67,6 +68,16 @@ export async function GET(req: Request) {
   } else if (!raw.startsWith('+') && !raw.startsWith('00')) {
     query = '+' + digitsOnly;
   }
+
+  // Logged on attempt, not on success: the audit question is which
+  // subjects this console queried, and a lookup whose upstream failed
+  // still means the subject was submitted and transmitted.
+  recordReconQuery({
+    tool: 'phone',
+    subject: query,
+    purpose: searchParams.get('purpose') || 'unspecified',
+    tier: 1,
+  });
 
   try {
     const parsed = phoneUtil.parse(query);

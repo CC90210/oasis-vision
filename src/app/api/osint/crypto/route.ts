@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     );
   }
 
-  if (isRateLimited(getClientIp(req), 20, 60_000)) {
+  if (isRateLimited(getClientIp(req), 20, 60_000, 'crypto')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

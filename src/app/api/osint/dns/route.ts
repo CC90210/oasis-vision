@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   if (!domain) return NextResponse.json({ error: 'Missing domain parameter' }, { status: 400 });
 
   const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp, 20, 60_000)) {
+  if (isRateLimited(clientIp, 20, 60_000, 'dns')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 

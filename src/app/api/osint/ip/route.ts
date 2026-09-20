@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   if (!ip) return NextResponse.json({ error: 'Missing ip parameter' }, { status: 400 });
 
   const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp, 20, 60_000)) {
+  if (isRateLimited(clientIp, 20, 60_000, 'ip')) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
   }
 
