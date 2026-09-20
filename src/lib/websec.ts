@@ -23,8 +23,7 @@
 
 import tls from 'tls';
 import { safeFetch, validateHost } from './ssrf-guard';
-
-const UA = 'OASIS-VISION/1.0 (+https://github.com/CC90210/oasis-vision)';
+import { PROBE_UA as UA } from './probe-semantics';
 
 /** Strip scheme/path/port down to a bare hostname. */
 export function toHostname(input: string): string | null {

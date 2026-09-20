@@ -26,7 +26,11 @@ import type { Readable } from 'stream';
  * landed on them, and our own traffic was unattributable when we needed to
  * argue about it. Keep the repo URL reachable — that link is the contact route.
  */
-export const OASIS_UA = 'OASIS-VISION/1.0 (+https://github.com/CC90210/oasis-vision)';
+// Single definition lives in probe-semantics.ts; re-exported here
+// because malware-live.ts imports it under this name.
+export { PROBE_UA as OASIS_UA } from './probe-semantics';
+import { PROBE_UA } from './probe-semantics';
+const UA_VALUE = PROBE_UA;
 
 export interface RequestOptions {
   timeoutMs?: number;
@@ -52,7 +56,7 @@ function request(url: string, { timeoutMs = 20000, headers = {} }: RequestOption
     const req = https.get(
       url,
       {
-        headers: { 'User-Agent': OASIS_UA, Accept: 'application/json', 'Accept-Language': 'en', ...headers },
+        headers: { 'User-Agent': UA_VALUE, Accept: 'application/json', 'Accept-Language': 'en', ...headers },
         timeout: timeoutMs,
       },
       (res) => {

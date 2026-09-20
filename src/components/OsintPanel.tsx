@@ -1609,19 +1609,127 @@ function OsintPanelInner({ isMobile, onSweepVisualize, onScanGeolocate }: OsintP
     }
 
     // ── SSL ──
+    // ── SSL / TLS ──
+    // Reads the shape src/lib/websec.ts returns. The previous version
+    // was written against the old external scanner's JSON and rendered
+    // `cipher` — now an object — as "[object Object]".
     if (activeTab === 'ssl') {
+      const ok = r.authorized && !r.expired && !r.selfSigned;
       return (
         <div>
-          <SectionHeader title="SSL/TLS ANALYSIS" icon={Shield} color="#76FF03" />
-          <ResultRow label="Target" value={query} color="#76FF03" />
-          <ResultRow label="Protocol" value={r.protocol || r.tls_version} />
-          <ResultRow label="Cipher" value={r.cipher || r.cipher_suite} />
-          <ResultRow label="Valid" value={r.valid !== undefined ? (r.valid ? 'YES' : 'NO') : undefined} color={r.valid ? '#00E676' : '#FF3D3D'} />
+          <SectionHeader title="SSL/TLS CERTIFICATE" icon={Shield} color={ok ? '#76FF03' : '#FF6E40'} />
+          <ResultRow label="Host" value={`${r.host}:${r.port}`} color="#76FF03" />
+          <ResultRow label="Protocol" value={r.protocol} />
+          <ResultRow label="Cipher" value={r.cipher ? `${r.cipher.name} (${r.cipher.version})` : null} />
           <ResultRow label="Issuer" value={r.issuer} />
           <ResultRow label="Subject" value={r.subject} />
-          <ResultRow label="Expires" value={r.expires || r.not_after} />
-          <ResultRow label="SANs" value={Array.isArray(r.sans) ? r.sans.join(', ') : r.sans} />
-          {renderFallback()}
+          <ResultRow
+            label="Expires"
+            value={r.validTo ? `${new Date(r.validTo).toISOString().slice(0, 10)} — ${r.daysRemaining} days` : null}
+            color={r.expired ? '#FF1744' : (r.daysRemaining ?? 99) < 14 ? '#FF6E40' : undefined}
+          />
+          <ResultRow label="Chain trusted" value={r.authorized ? 'YES' : 'NO'} color={r.authorized ? '#00E676' : '#FF1744'} />
+          {r.serialNumber && <ResultRow label="Serial" value={r.serialNumber} />}
+
+          {Array.isArray(r.findings) && r.findings.length > 0 && (
+            <>
+              <SectionHeader title="FINDINGS" icon={AlertTriangle} color={ok ? '#00E676' : '#FF6E40'} />
+              {r.findings.map((f: string, i: number) => (
+                <div key={i} className="text-[10px] font-mono text-[var(--text-secondary)] px-2 py-0.5 leading-relaxed">• {f}</div>
+              ))}
+            </>
+          )}
+
+          {Array.isArray(r.altNames) && r.altNames.length > 0 && (
+            <>
+              <SectionHeader title={`SUBJECT ALT NAMES (${r.altNames.length})`} icon={Layers} color="#00BCD4" />
+              <div className="text-[10px] font-mono text-[var(--text-secondary)] px-2 py-1 leading-relaxed break-all">
+                {r.altNames.join(' · ')}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
+    // ── SECURITY HEADERS ──
+    if (activeTab === 'headers') {
+      const gradeColor: Record<string, string> = {
+        A: '#00E676', B: '#76FF03', C: '#FFD700', D: '#FF6E40', F: '#FF1744',
+      };
+      return (
+        <div>
+          <SectionHeader title="SECURITY HEADERS" icon={Code} color={gradeColor[r.grade] || '#87CEEB'} />
+          <ResultRow label="URL" value={r.url} />
+          <ResultRow label="Status" value={String(r.status)} />
+          {r.server && <ResultRow label="Server" value={r.server} />}
+          <ResultRow label="Grade" value={`${r.grade}  (${r.score}/100)`} color={gradeColor[r.grade] || undefined} />
+
+          {Array.isArray(r.checks) && r.checks.map((c: any, i: number) => {
+            const tone = c.verdict === 'good' ? '#00E676' : c.verdict === 'weak' ? '#FFD700' : '#FF6E40';
+            return (
+              <div key={i} className="px-2 py-1.5 rounded hover:bg-[var(--hover-accent)]">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-mono font-bold w-[52px] flex-shrink-0" style={{ color: tone }}>
+                    {String(c.verdict).toUpperCase()}
+                  </span>
+                  <span className="text-[10px] font-mono text-[var(--text-primary)] break-all">{c.header}</span>
+                </div>
+                <div className="text-[9px] font-mono text-[var(--text-muted)] mt-0.5 leading-relaxed pl-[60px]">{c.note}</div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // ── TECHNOLOGY FINGERPRINT ──
+    if (activeTab === 'tech') {
+      const techs = Array.isArray(r.technologies) ? r.technologies : [];
+      return (
+        <div>
+          <SectionHeader title={`TECHNOLOGY (${techs.length})`} icon={Code} color="#9C27B0" />
+          <ResultRow label="URL" value={r.url} />
+          <ResultRow label="Status" value={String(r.status)} />
+          {techs.length === 0 && (
+            <div className="text-[10px] font-mono text-[var(--text-secondary)] px-2 py-1.5 leading-relaxed">
+              No known signature matched. The site may be hand-written, or served behind something that strips
+              identifying headers — absence here is not evidence of a bare stack.
+            </div>
+          )}
+          {techs.map((t: any, i: number) => (
+            <div key={i} className="px-2 py-1.5 rounded hover:bg-[var(--hover-accent)]">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono font-bold text-[#9C27B0]">{t.name}</span>
+                <span className="text-[9px] font-mono text-[var(--text-muted)] px-1 py-px rounded bg-[var(--hover-accent)]">{t.category}</span>
+              </div>
+              <div className="text-[9px] font-mono text-[var(--text-muted)] mt-0.5 break-all">{t.evidence}</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // ── SUBDOMAINS ──
+    if (activeTab === 'subdomains') {
+      const subs = Array.isArray(r.subdomains) ? r.subdomains : [];
+      return (
+        <div>
+          <SectionHeader title={`SUBDOMAINS (${r.total ?? subs.length})`} icon={Layers} color="#00BCD4" />
+          <ResultRow label="Domain" value={r.domain} color="#00BCD4" />
+          <ResultRow label="Source" value={r.source} />
+          {r.note && (
+            <div className="text-[9px] font-mono text-[var(--text-muted)] px-2 py-1.5 leading-relaxed">{r.note}</div>
+          )}
+          <div className="max-h-[320px] overflow-y-auto">
+            {subs.map((s: string, i: number) => (
+              <a key={i} href={`https://${s}`} target="_blank" rel="noopener noreferrer"
+                 className="flex items-center gap-1.5 px-2 py-0.5 rounded hover:bg-[var(--hover-accent)] group">
+                <span className="text-[10px] font-mono text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] break-all">{s}</span>
+                <ExternalLink className="w-2.5 h-2.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 flex-shrink-0" />
+              </a>
+            ))}
+          </div>
         </div>
       );
     }
