@@ -3,7 +3,7 @@
  * ║  POLYBOLOS SDK — Client Controller                              ║
  * ║  Unified Intelligence Fusion Engine                             ║
  * ║                                                                 ║
- * ║  Subscribes to OSIRIS feeds + external providers (Lattice),     ║
+ * ║  Subscribes to OASIS VISION feeds + external providers (Lattice),     ║
  * ║  normalizes all data into PolybolosEntity[], and emits a        ║
  * ║  fused Common Operating Picture stream.                         ║
  * ╚══════════════════════════════════════════════════════════════════╝
@@ -21,7 +21,7 @@ import {
 } from './types';
 import { LatticeAdapter } from './LatticeAdapter';
 
-// ── OSIRIS Feed → Entity Translators ───────────────────────────────
+// ── OASIS VISION Feed → Entity Translators ───────────────────────────────
 
 function translateFlights(flights: any[], subtype: string): PolybolosEntity[] {
   if (!flights?.length) return [];
@@ -188,7 +188,7 @@ export class PolybolosClient {
     this.config.onStatusChange?.(this.getStatus());
   }
 
-  /** Connect to the OSIRIS SSE stream endpoint */
+  /** Connect to the OASIS VISION SSE stream endpoint */
   private connectSSE(): void {
     if (typeof EventSource === 'undefined') return;
 
@@ -220,10 +220,10 @@ export class PolybolosClient {
   }
 
   /**
-   * Ingest raw OSIRIS data and translate it into Polybolos entities.
+   * Ingest raw OASIS VISION data and translate it into Polybolos entities.
    * This is the primary method called by page.tsx to feed data into the SDK.
    */
-  ingestOsirisData(data: Record<string, any>): void {
+  ingestOasisData(data: Record<string, any>): void {
     const entities: PolybolosEntity[] = [];
 
     // Air domain
@@ -344,7 +344,7 @@ export class PolybolosClient {
 
   private getActiveFeedCount(): number {
     let count = 0;
-    // Count OSIRIS feeds that have data
+    // Count OASIS VISION feeds that have data
     const feeds = ['commercial_flights', 'private_flights', 'military_flights', 'maritime_ships',
       'satellites', 'earthquakes', 'fires', 'cameras', 'radiation'];
     for (const feed of feeds) {

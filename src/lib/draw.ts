@@ -2,7 +2,7 @@ import type { LngLat } from './geo';
 import { circleToRing, haversine, pathLength, polygonArea, rectToRing, ringPerimeter } from './geo';
 
 /**
- * OSIRIS — AOI shape model
+ * OASIS VISION — AOI shape model
  *
  * Four ways to describe an area, one canonical geometry.
  *

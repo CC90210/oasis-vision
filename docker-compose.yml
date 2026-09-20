@@ -1,17 +1,16 @@
-name: osiris
+name: oasis-vision
 services:
-  osiris:
+  oasis-vision:
     # Builds locally from the Dockerfile so you always run the cloned code.
-    # To use the prebuilt image instead, replace the `build:` block below with
-    # No image is published for this fork — this compose file builds from
-    # source. Do not substitute the upstream image: it is a different app.
+    # No image is published for OASIS VISION, and the upstream image is a
+    # different application — do not substitute it here.
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: osiris
-    # Host port is configurable via OSIRIS_PORT in .env (defaults to 3000).
+    container_name: oasis-vision
+    # Host port is configurable via OASIS_PORT in .env (defaults to 3000).
     ports:
-      - "${OSIRIS_PORT:-3000}:3000"
+      - "${OASIS_PORT:-3000}:3000"
     # Optional API keys / scanner backend — copy .env.template to .env and
     # fill in what you need. Missing file is ignored (keyless feeds still work).
     env_file:
@@ -29,25 +28,25 @@ services:
       - default
       - umami_default
 
-  osiris-cache:
+  oasis-vision-cache:
     image: nginx:alpine
-    container_name: osiris-cache
+    container_name: oasis-vision-cache
     ports:
       - "8080:8080"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - nginx-cache:/var/cache/nginx
     depends_on:
-      - osiris
+      - oasis-vision
     restart: unless-stopped
     networks:
       - default
 
-  osiris-intel:
+  oasis-vision-intel:
     build:
       context: ./intel
       dockerfile: Dockerfile
-    container_name: osiris-intel
+    container_name: oasis-vision-intel
     ports:
       - "4000:4000"
     restart: unless-stopped
@@ -96,7 +95,7 @@ x-casaos:
         en_us: "(Optional) RECON scanner backend URL, e.g. http://scanner:7700"
     - container: SCANNER_KEY
       description:
-        en_us: "(Optional) RECON scanner shared secret (must match backend OSIRIS_KEY)."
+        en_us: "(Optional) RECON scanner shared secret (must match backend OASIS_KEY)."
     - container: FIRMS_API_KEY
       description:
         en_us: "(Optional) NASA FIRMS API key for active-fire data."

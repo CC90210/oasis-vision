@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 /**
- * OSIRIS — Global Infrastructure API
+ * OASIS VISION — Global Infrastructure API
  * Tracks critical global infrastructure: Nuclear Power Plants worldwide
  * Comprehensive coverage including all Russian, Chinese, and strategically important facilities
  */

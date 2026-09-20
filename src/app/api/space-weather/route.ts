@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 
 /**
- * OSIRIS — Space Weather API
+ * OASIS VISION — Space Weather API
  * Fetches real-time solar activity from NOAA Space Weather Prediction Center
  * FREE — No API key required
  * Data: Kp index (geomagnetic), solar flares, CME alerts

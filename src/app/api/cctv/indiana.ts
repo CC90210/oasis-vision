@@ -3,7 +3,7 @@ import { stealthFetch } from '@/lib/stealthFetch';
 import { cachedSource } from '@/lib/sourceCache';
 
 /**
- * OSIRIS — Indiana CCTV Cameras (INDOT TrafficWise / 511in.org)
+ * OASIS VISION — Indiana CCTV Cameras (INDOT TrafficWise / 511in.org)
  * Source: https://511in.org/api/graphql — the CARS 511 platform's map query
  * ~730 statewide traffic cameras — NO API KEY NEEDED.
  *
@@ -154,7 +154,7 @@ async function loadIndianaCameras(): Promise<CctvCamera[]> {
     cams.push(cam);
   }
 
-  console.log(`[OSIRIS] Indiana cameras — INDOT TrafficWise: ${cams.length}`);
+  console.log(`[OASIS] Indiana cameras — INDOT TrafficWise: ${cams.length}`);
   return cams;
 }
 

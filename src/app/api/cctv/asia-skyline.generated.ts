@@ -1,7 +1,7 @@
 import type { CctvCamera } from './types';
 
 /**
- * OSIRIS — SkylineWebcams public live cameras across Asia (GENERATED).
+ * OASIS VISION — SkylineWebcams public live cameras across Asia (GENERATED).
  *
  * Skyline's `liveNNNN.jpg` is a catalog poster, not a guaranteed live frame —
  * only about a third of them actually refresh. Cameras whose poster was

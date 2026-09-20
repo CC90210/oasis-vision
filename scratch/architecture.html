@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>OSIRIS Architecture Deployment</title>
+<title>OASIS VISION Architecture Deployment</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@300;500;700&display=swap');
   
@@ -179,7 +179,7 @@
 <body>
 
   <div class="header">
-    <h1>OSIRIS // Deployment Architecture</h1>
+    <h1>OASIS VISION // Deployment Architecture</h1>
     <div class="subtitle">SYSTEM ANALYSIS REPORT :: GENERATED FOR LIVE PRODUCTION (100.89.48.10)</div>
   </div>
 
@@ -189,7 +189,7 @@
       <ul>
         <li><strong>Container 1:</strong> osiris-cache (Nginx:Alpine) - Port 8080</li>
         <li><strong>Container 2:</strong> osiris (Next.js 15) - Port 3000</li>
-        <li><strong>Container 3:</strong> osiris-intel (Node.js 22) - Port 4000</li>
+        <li><strong>Container 3:</strong> oasis-vision-intel (Node.js 22) - Port 4000</li>
         <li><strong>Restart Policy:</strong> unless-stopped (auto-heals on failure)</li>
       </ul>
     </div>
@@ -214,7 +214,7 @@
     </div>
 
     <div class="box">
-      <div class="box-title">osiris-intel (Ontology Engine) <span class="badge">NODE.JS</span></div>
+      <div class="box-title">oasis-vision-intel (Ontology Engine) <span class="badge">NODE.JS</span></div>
       <ul>
         <li><strong>Function:</strong> Entity resolution (Aircraft, Vessels, IPs, Companies).</li>
         <li><strong>Data Source 1:</strong> OpenSanctions OFAC SDN (in-memory graph, 24h refresh).</li>
@@ -248,11 +248,11 @@
     <div class="flow-row">
       <div class="node">osiris (Next.js :3000)</div>
       <div class="arrow">==[ Internal API ]==></div>
-      <div class="node intel">osiris-intel (Node.js :4000)</div>
+      <div class="node intel">oasis-vision-intel (Node.js :4000)</div>
     </div>
 
     <div class="flow-row">
-      <div class="node intel">osiris-intel (Node.js :4000)</div>
+      <div class="node intel">oasis-vision-intel (Node.js :4000)</div>
       <div class="arrow">==[ Outbound REST ]==></div>
       <div class="node external">OpenSanctions CSV<br>Wikidata SPARQL<br>RIPEstat / ip-api</div>
     </div>
@@ -271,7 +271,7 @@
       The only port exposed to the host machine is `8080`, managed by the Nginx caching layer. This protects the Next.js server from direct connections and offloads heavy map tile fetching.
     </p>
     <p>
-      The intelligence resolving system (`osiris-intel`) does not talk directly to the client browser. Instead, Next.js calls it internally via `http://osiris-intel:4000/resolve` when the user clicks on entities like aircraft or vessels, keeping API keys and data flows secure within the server environment.
+      The intelligence resolving system (`oasis-vision-intel`) does not talk directly to the client browser. Instead, Next.js calls it internally via `http://oasis-vision-intel:4000/resolve` when the user clicks on entities like aircraft or vessels, keeping API keys and data flows secure within the server environment.
     </p>
     <p>
       Data caching strategies are separated by domain: Web tiles are cached on disk via Nginx, massive static feeds (like satellites) are cached on disk by Next.js, and entity resolution data is cached in-memory (LRU) inside the intel container.

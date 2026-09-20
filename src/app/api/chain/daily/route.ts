@@ -3,7 +3,7 @@ import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 import { buildDailyBrief } from '@/lib/chainFeeds';
 
 /**
- * OSIRIS — Daily chain-threat brief.
+ * OASIS VISION — Daily chain-threat brief.
  *
  * Aggregates on-chain exploits (DefiLlama), crypto/blockchain CVEs (NVD)
  * and newly designated OFAC wallets into one dated digest. Fully keyless.
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
       headers: { 'Cache-Control': 'public, s-maxage=1800, stale-while-revalidate=3600' },
     });
   } catch (e) {
-    console.error('[OSIRIS] daily brief failed:', e);
+    console.error('[OASIS] daily brief failed:', e);
     return NextResponse.json({ error: 'Failed to build daily brief' }, { status: 502 });
   }
 }

@@ -2,7 +2,7 @@ import { CctvCamera } from './types';
 import { stealthFetch } from '@/lib/stealthFetch';
 
 /**
- * OSIRIS — Iceland CCTV Cameras
+ * OASIS VISION — Iceland CCTV Cameras
  * Source: Vegagerðin (Icelandic Road and Coastal Administration)
  * Official public API: https://gagnaveita.vegagerdin.is/api/vefmyndavelar2014_1
  * Returns ~488 live road cameras across the entire island with real-time JPEG snapshots.

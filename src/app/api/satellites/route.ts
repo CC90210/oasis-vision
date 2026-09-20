@@ -6,7 +6,7 @@ import { propagateTLE } from '@/lib/orbit';
 export const maxDuration = 60;
 
 /**
- * OSIRIS — Satellite Tracking API
+ * OASIS VISION — Satellite Tracking API
  * Fetches TLE data from multiple sources with fallbacks
  * Computes real-time positions using simplified SGP4
  */
@@ -176,7 +176,7 @@ async function fetchCelesTrakGroup(url: string): Promise<{ name: string; line1: 
     const res = await fetch(url, {
       signal: AbortSignal.timeout(30000),
       cache: 'no-store',
-      headers: { 'User-Agent': 'OSIRIS/4.2 (satellite-tracker)' },
+      headers: { 'User-Agent': 'OASIS VISION/4.2 (satellite-tracker)' },
     });
     if (!res.ok) return [];
     const text = await res.text();

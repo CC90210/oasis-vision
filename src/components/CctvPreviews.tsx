@@ -7,7 +7,7 @@ import { layoutTile, tileHeight, tilesOverlap, type TileGeometry } from '@/lib/m
 import type { Map as MlMap } from 'maplibre-gl';
 
 /**
- * OSIRIS — live CCTV previews on the map
+ * OASIS VISION — live CCTV previews on the map
  *
  * Zoom in far enough on a cluster of cameras and the nearest ones stop being
  * dots and start showing what they see: a small live frame pinned above each

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 /**
- * OSIRIS — Live Cyber Attack Feed
+ * OASIS VISION — Live Cyber Attack Feed
  * Generates animated attack arcs from real Feodo Tracker + URLhaus threat data.
  * Each attack has a source (attributed attacker region) and destination (C2 server).
  * The frontend animates these as flying arcs across the globe.
@@ -73,7 +73,7 @@ export async function GET() {
     const res = await fetch('https://feodotracker.abuse.ch/downloads/ipblocklist.json', {
       signal: AbortSignal.timeout(10000),
       cache: 'no-store',
-      headers: { 'User-Agent': 'OSIRIS/4.3', Accept: 'application/json' },
+      headers: { 'User-Agent': 'OASIS VISION/4.3', Accept: 'application/json' },
     });
 
     if (!res.ok) {
@@ -137,7 +137,7 @@ export async function GET() {
       headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
     });
   } catch (error) {
-    console.error('[OSIRIS] Cyber attack feed error:', error);
+    console.error('[OASIS] Cyber attack feed error:', error);
     return NextResponse.json({ attacks: [], total: 0, error: 'Feed unavailable' }, { status: 500 });
   }
 }

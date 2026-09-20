@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Share2, Copy, Check, Link2, X, Globe, MapPin } from 'lucide-react';
 
 // The text that leaves this app and lands on someone else's timeline. It used
-// to read "OSIRIS — Open Source Global Intelligence Platform": the previous
+// to read "OASIS VISION — Open Source Global Intelligence Platform": the previous
 // owner's brand, plus the "open source intelligence" identity the operator had
 // already had removed everywhere else. Every tap of X or REDDIT published it.
 // Worded to match the twitter/openGraph titles in src/app/layout.tsx so a
@@ -98,7 +98,7 @@ export default function SharePanel({ mapView, activeLayers, mouseCoords }: Share
             initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
-            className="absolute top-12 right-0 w-72 glass-panel p-4 pointer-events-auto osiris-glow z-[300]"
+            className="absolute top-12 right-0 w-72 glass-panel p-4 pointer-events-auto oasis-glow z-[300]"
           >
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">

@@ -4,7 +4,7 @@ import { centroidFor } from '@/lib/countryCentroids';
 export const dynamic = 'force-dynamic';
 
 /**
- * OSIRIS — Cloudflare Radar (internet disruption + attack origin)
+ * OASIS VISION — Cloudflare Radar (internet disruption + attack origin)
  * Source: https://radar.cloudflare.com/  (API docs: developers.cloudflare.com/radar)
  *
  * Requires CLOUDFLARE_API_TOKEN — a free Cloudflare account token scoped to
@@ -188,7 +188,7 @@ export async function GET(req: Request) {
   if (attacksRes.status === 'rejected') errors.push(`attack_origins: ${attacksRes.reason?.message ?? 'failed'}`);
 
   if (outages.length === 0 && attack_origins.length === 0 && errors.length > 0) {
-    console.error('[OSIRIS] Cloudflare Radar fetch failed:', errors.join('; '));
+    console.error('[OASIS] Cloudflare Radar fetch failed:', errors.join('; '));
     return NextResponse.json(
       { configured: true, outages: [], attack_origins: [], error: 'Cloudflare Radar unavailable', errors },
       { status: 502 }

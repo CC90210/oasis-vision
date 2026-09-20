@@ -2,7 +2,7 @@ import { matchExact, type SanctionEntry } from '@/lib/sanctions';
 
 /**
  * ═══════════════════════════════════════════════════════════════
- *  OSIRIS — On-chain wallet intelligence (BTC / ETH / SOL)
+ *  OASIS VISION — On-chain wallet intelligence (BTC / ETH / SOL)
  *
  *  Every source here is keyless and was verified against live data:
  *    BTC  mempool.space REST
@@ -162,7 +162,7 @@ async function fetchPrice(chain: Chain): Promise<number | null> {
     if (Object.keys(usd).length) priceCache = { at: Date.now(), usd };
     return usd[chain] ?? priceCache?.usd[chain] ?? null;
   } catch (e) {
-    console.warn('[OSIRIS] price lookup failed:', e instanceof Error ? e.message : e);
+    console.warn('[OASIS] price lookup failed:', e instanceof Error ? e.message : e);
     // Serve the last known price rather than blanking the USD column.
     return priceCache?.usd[chain] ?? null;
   }

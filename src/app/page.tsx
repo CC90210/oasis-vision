@@ -24,7 +24,7 @@ import GlobalStatusBar from '@/components/GlobalStatusBar';
 import LiveAlerts from '@/components/LiveAlerts';
 import WorldRemote from '@/components/WorldRemote';
 import ArcGISPanel from '@/components/ArcGISPanel';
-const OsirisMap = dynamic(() => import('@/components/OsirisMap'), { ssr: false });
+const OasisMap = dynamic(() => import('@/components/OasisMap'), { ssr: false });
 const LayerPanel = dynamic(() => import('@/components/LayerPanel'));
 const SpaceCam = dynamic(() => import('@/components/SpaceCam'), { ssr: false });
 const CameraViewer = dynamic(() => import('@/components/CameraViewer'));
@@ -192,7 +192,7 @@ export default function Dashboard() {
 
   // The popup lives in raw map HTML, so it hands aircraft over through a global.
   useEffect(() => {
-    (window as unknown as { osirisWatchFlight?: (f: WatchedFlight) => void }).osirisWatchFlight = (f) => {
+    (window as unknown as { oasisWatchFlight?: (f: WatchedFlight) => void }).oasisWatchFlight = (f) => {
       if (!f?.icao24) return;
       setWatchedFlights((prev) =>
         prev.some((w) => w.icao24 === f.icao24) ? prev : [...prev, f].slice(-6));
@@ -267,12 +267,12 @@ export default function Dashboard() {
   const [scanTargets, setScanTargets] = useState<any[]>([]);
   const [drawnPolygons, setDrawnPolygons] = useState<DrawnShape[]>([]);
   const [demoMode, setDemoMode] = useState(false);
-  const [osirisTheme, setOsirisTheme] = useState<'core'|'ghost'>('core');
+  const [oasisTheme, setOasisTheme] = useState<'core'|'ghost'>('core');
 
 
   useEffect(() => {
-    document.body.className = osirisTheme === 'core' ? '' : `theme-${osirisTheme}`;
-  }, [osirisTheme]);
+    document.body.className = oasisTheme === 'core' ? '' : `theme-${oasisTheme}`;
+  }, [oasisTheme]);
 
   /* Style Studio overrides are inline on <body>, so they survive the theme
      swap above and only need reapplying once per load. */
@@ -449,7 +449,7 @@ export default function Dashboard() {
           setLocationLabel(label);
           lastGeocodedPos.current = coords;
         }
-      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
+      } catch (e) { console.warn('[OASIS] Suppressed error:', e instanceof Error ? e.message : e); }
     }, 3000); // 3s debounce (was 1.5s)
   }, []);
 
@@ -485,7 +485,7 @@ export default function Dashboard() {
   }, []);
 
   // ── Drawing / AOI ──
-  // OsirisMap already owns the draw interaction and the polygon rendering;
+  // OasisMap already owns the draw interaction and the polygon rendering;
   // this only turns a finished ring into a measured, named, coloured record.
   // Restore drawn areas on load. Work that vanishes on refresh is work the
   // operator will not trust the tool with.
@@ -579,7 +579,7 @@ export default function Dashboard() {
       }
       return false;
     } catch (e) {
-      console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e);
+      console.warn('[OASIS] Suppressed error:', e instanceof Error ? e.message : e);
       setBackendStatus('error');
       return false;
     }
@@ -609,7 +609,7 @@ export default function Dashboard() {
       try {
         const r = await fetch('/api/space-weather');
         if (r.ok) setSpaceWeather(await r.json());
-      } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
+      } catch (e) { console.warn('[OASIS] Suppressed error:', e instanceof Error ? e.message : e); }
     }, 5000);
 
     // Polling — OPTIMIZED intervals to minimize edge requests
@@ -841,7 +841,7 @@ export default function Dashboard() {
 
   // Reactive layer fetch: handled by layerFetchedRef above (no duplicate)
 
-  // ── OSIRIS SDK — Intelligence Fusion Layer ──
+  // ── OASIS VISION SDK — Intelligence Fusion Layer ──
   // Produces node coordinates for the SDK network mesh visualization.
   // Does NOT duplicate existing layer visuals — SDK layer is LINES ONLY.
   // Cameras are excluded — they have their own dedicated layer.
@@ -1129,8 +1129,8 @@ export default function Dashboard() {
 
       {/* ── MAP ── */}
       <ErrorBoundary name="Map">
-        <OsirisMap 
-          key={osirisTheme}
+        <OasisMap 
+          key={oasisTheme}
           data={data} 
           activeLayers={activeLayers} 
           projection={mapProjection} 
@@ -1143,7 +1143,7 @@ export default function Dashboard() {
           sweepData={sweepData}
           scanTargets={scanTargets}
           demoMode={demoMode}
-          theme={osirisTheme}
+          theme={oasisTheme}
           arcgisLayers={arcgisLayers.filter(l => l.visible).map(l => ({ id: l.id, title: l.title, geojson: l.geojson, color: l.color, opacity: l.opacity }))}
           onMapCenter={setMapCenter}
           route={activeRoute}
@@ -1346,7 +1346,7 @@ export default function Dashboard() {
 
 
       {/* ── NEW SIDEBAR (Root Level) ── */}
-      {showLayers && !isMobile && <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} theme={osirisTheme} setTheme={setOsirisTheme} capabilities={capabilities} />}
+      {showLayers && !isMobile && <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} theme={oasisTheme} setTheme={setOasisTheme} capabilities={capabilities} />}
 
 
 
@@ -1572,7 +1572,7 @@ export default function Dashboard() {
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-2.5 bg-[#111] border-b border-[var(--border-primary)]">
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-[#FF4081] animate-osiris-pulse" />
+                  <div className="w-2 h-2 rounded-full bg-[#FF4081] animate-oasis-pulse" />
                   <span className="text-[11px] font-mono font-bold text-white tracking-wider">{liveFeedName}</span>
                   <span className="px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 font-mono text-[10px] font-bold">LIVE STREAM</span>
                   {!liveFeedEmbedAllowed && (
@@ -1724,7 +1724,7 @@ export default function Dashboard() {
                           <div><div className="hud-label" style={{fontSize:'9px'}}>NUC</div><div className="hud-value text-[10px]" style={{color:'var(--accent-nuclear)'}}>{(data.infrastructure?.length||0)}</div></div>
                         </div>
                       </div>
-                      <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} isMobile={true} theme={osirisTheme} setTheme={setOsirisTheme} capabilities={capabilities} />
+                      <LayerPanel data={data} activeLayers={activeLayers} setActiveLayers={setActiveLayers} isMobile={true} theme={oasisTheme} setTheme={setOasisTheme} capabilities={capabilities} />
                       <div className="mt-8">
                         <ViewPresets onNavigate={(lat, lng, zoom) => { setFlyToLocation({ lat, lng, ts: Date.now() }); setMapView(v => ({ ...v, zoom })); setMobilePanel(null); }} />
                       </div>

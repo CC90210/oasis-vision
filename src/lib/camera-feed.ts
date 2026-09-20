@@ -1,5 +1,5 @@
 /**
- * OSIRIS — how the camera viewer decides what to show
+ * OASIS VISION — how the camera viewer decides what to show
  *
  * Some cameras arrive with nothing but a link to somebody else's page. A few of
  * those pages we know how to open up, so the feed can play in place instead of

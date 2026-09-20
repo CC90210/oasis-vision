@@ -2,7 +2,7 @@ import type { CctvCamera } from './types';
 import { ASIA_SKYLINE_CAMERAS } from './asia-skyline.generated';
 
 /**
- * OSIRIS — Asia live public webcams.
+ * OASIS VISION — Asia live public webcams.
  *
  * Complements the traffic-authority feeds already wired up for the region
  * (HK Transport Dept, Taiwan THB, Japan MLIT, LTA Singapore) with open public

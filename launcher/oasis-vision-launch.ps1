@@ -67,7 +67,7 @@ if ($running -and $Lan) {
               Where-Object { $_.LocalAddress -eq '0.0.0.0' -or $_.LocalAddress -eq '::' }
   if (-not $boundAll) {
     Write-Host "Restarting on all interfaces for LAN access..." -ForegroundColor Cyan
-    & (Join-Path $PSScriptRoot 'osiris-stop.ps1') -Port $Port | Out-Null
+    & (Join-Path $PSScriptRoot 'oasis-vision-stop.ps1') -Port $Port | Out-Null
     Start-Sleep -Seconds 2
     $running = $false
   }

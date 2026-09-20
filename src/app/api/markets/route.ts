@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { cachedSource } from '@/lib/sourceCache';
 
 /**
- * OSIRIS — Financial Markets & Commodities API
+ * OASIS VISION — Financial Markets & Commodities API
  *
  * Indices, rates, FX, defense equities, energy, commodities and crypto, all
  * from Yahoo's v8 chart endpoint. One request per symbol buys the last close,

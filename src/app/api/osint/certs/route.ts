@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   try {
     const res = await fetch(`https://crt.sh/?q=%25.${encodeURIComponent(domain)}&output=json`, {
       signal: AbortSignal.timeout(10000),
-      headers: { 'User-Agent': 'Osiris-OSINT/3.0' },
+      headers: { 'User-Agent': 'Oasis-OSINT/3.0' },
     });
 
     if (!res.ok) {

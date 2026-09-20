@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 /**
- * OSIRIS — Hudson Rock Infostealer Intelligence
+ * OASIS VISION — Hudson Rock Infostealer Intelligence
  *
  * Cavalier's free OSINT endpoints report whether an asset appears in Hudson
  * Rock's infostealer corpus — machines compromised by Redline, Lumma, Vidar

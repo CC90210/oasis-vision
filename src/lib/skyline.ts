@@ -1,5 +1,5 @@
 /**
- * OSIRIS — SkylineWebcams feed resolution
+ * OASIS VISION — SkylineWebcams feed resolution
  *
  * SkylineWebcams cameras arrive in our dataset carrying only an `external_url`,
  * so the viewer would render them as "this feed requires external clearance"

@@ -1,7 +1,7 @@
 import { twoline2satrec, propagate, gstime, eciToGeodetic, degreesLat, degreesLong } from 'satellite.js';
 
 /**
- * OSIRIS — orbital propagation
+ * OASIS VISION — orbital propagation
  *
  * The satellites route carried a hand-rolled propagator: a two-body Kepler
  * solve with no J2 term and no drag, reporting geocentric latitude as if it

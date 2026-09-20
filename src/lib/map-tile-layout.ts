@@ -1,5 +1,5 @@
 /**
- * OSIRIS — where a preview tile sits relative to the marker it belongs to.
+ * OASIS VISION — where a preview tile sits relative to the marker it belongs to.
  *
  * Two layers pin live frames to markers past zoom 13: CCTV cameras, and the
  * live TV news feeds. They want different tile sizes but exactly the same

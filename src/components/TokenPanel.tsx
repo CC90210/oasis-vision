@@ -14,7 +14,7 @@ export default function TokenPanel() {
         className="pointer-events-auto glass-panel px-3 py-1.5 flex items-center gap-2 text-[9px] font-mono tracking-widest hover:opacity-80 transition-opacity border-[#14F195]/40 bg-[#14F195]/10 ml-3 shadow-[0_0_10px_rgba(20,241,149,0.1)]"
       >
         <TrendingUp className="w-3 h-3 text-[#14F195]" />
-        <span className="text-[#14F195] font-bold">$OSIRIS</span>
+        <span className="text-[#14F195] font-bold">$OASIS VISION</span>
       </button>
 
       <AnimatePresence>
@@ -39,7 +39,7 @@ export default function TokenPanel() {
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-primary)] bg-black/40">
                 <div className="flex items-center gap-3">
                   <TrendingUp className="w-4 h-4 text-[#14F195]" />
-                  <h2 className="text-xs font-mono font-bold text-white tracking-widest uppercase">$OSIRIS LIVE CHART</h2>
+                  <h2 className="text-xs font-mono font-bold text-white tracking-widest uppercase">$OASIS VISION LIVE CHART</h2>
                 </div>
                 <button 
                   onClick={() => setIsOpen(false)}

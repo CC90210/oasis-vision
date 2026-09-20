@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
           redirect: 'manual',
           headers: {
             'Accept': '*/*',
-            'User-Agent': 'Osiris-Tile-Proxy/1.0',
+            'User-Agent': 'Oasis-Tile-Proxy/1.0',
           },
           // Using Next.js fetch cache options to heavily cache tiles locally
           next: {
@@ -134,7 +134,7 @@ export async function GET(request: NextRequest) {
       const hop = await fetch(next.toString(), {
         signal: AbortSignal.timeout(15000),
         redirect: 'manual',
-        headers: { Accept: '*/*', 'User-Agent': 'Osiris-Tile-Proxy/1.0' },
+        headers: { Accept: '*/*', 'User-Agent': 'Oasis-Tile-Proxy/1.0' },
         next: { revalidate: 31536000 },
       });
       if (!hop.ok) {

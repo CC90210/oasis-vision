@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
 
 /**
- * OSIRIS — Severe Weather & Anomalies API
+ * OASIS VISION — Severe Weather & Anomalies API
  * Fetches active natural events from NASA EONET (global storms/volcanoes/sea ice),
  * NOAA/NWS active alerts (U.S. only), and GDACS (global cyclones/floods/droughts).
  * NWS alone only covers the U.S.; GDACS fills the rest of the world with the same
@@ -152,7 +152,7 @@ export async function GET() {
       fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert', {
         headers: {
           Accept: 'application/geo+json',
-          'User-Agent': 'OSIRIS Severe Weather Layer',
+          'User-Agent': 'OASIS VISION Severe Weather Layer',
         },
         signal: AbortSignal.timeout(10000),
       }),

@@ -3,7 +3,7 @@ import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 import { analyseAddress, capabilities, detectChain, type Chain } from '@/lib/chainIntel';
 
 /**
- * OSIRIS — On-chain wallet intelligence.
+ * OASIS VISION — On-chain wallet intelligence.
  *
  * Takes a BTC, ETH or SOL address and returns balance, activity profile,
  * counterparty breakdown, OFAC screening and a transparent risk score.
@@ -57,7 +57,7 @@ export async function GET(req: Request) {
       { headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } }
     );
   } catch (e) {
-    console.error('[OSIRIS] crypto intel failed:', e);
+    console.error('[OASIS] crypto intel failed:', e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Wallet lookup failed' },
       { status: 502 }

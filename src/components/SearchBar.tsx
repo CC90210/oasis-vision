@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Search, X, MapPin, Navigation, Building2, Globe2, Landmark } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════
-   OSIRIS — Enhanced Search / Locate Bar
+   OASIS VISION — Enhanced Search / Locate Bar
    Street-level geocoding with intelligent zoom levels
    Ctrl+F / Cmd+F keyboard shortcut support
    ═══════════════════════════════════════════════════════════════ */
@@ -168,7 +168,7 @@ export default function SearchBar({ onLocate, alwaysExpanded = false }: SearchBa
         // Use addressdetails=1 for better type detection and limit=8 for more results
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=8&addressdetails=1&extratags=1`,
-          { headers: { 'Accept-Language': 'en', 'User-Agent': 'OSIRIS-Intelligence-Platform/1.0' } }
+          { headers: { 'Accept-Language': 'en', 'User-Agent': 'OASIS VISION-Intelligence-Platform/1.0' } }
         );
         const data = await res.json();
         setResults(data.map((r: any) => {

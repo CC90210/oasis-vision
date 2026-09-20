@@ -3,7 +3,7 @@
 import { ExternalLink, Orbit, Satellite, X } from 'lucide-react';
 
 /**
- * OSIRIS — selected satellite readout
+ * OASIS VISION — selected satellite readout
  *
  * Satellites are the one layer drawn off the surface, and that broke the popup
  * they used to get. A MapLibre popup can only be anchored to a ground

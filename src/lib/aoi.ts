@@ -1,5 +1,5 @@
 /**
- * OSIRIS — Area of Interest analysis
+ * OASIS VISION — Area of Interest analysis
  *
  * Turns a drawn polygon into an answer to "what is inside this?". Every tracked
  * layer is swept, the hits are grouped by kind, and the result is what the

@@ -1,5 +1,5 @@
 /**
- * OSIRIS — what a camera can show inside a map preview tile.
+ * OASIS VISION — what a camera can show inside a map preview tile.
  *
  * The tiles started out as JPEG snapshots only. That left Quebec 511 — 675
  * cameras, every one of them an MP4 clip — and the 75 HLS webcams as bare dots

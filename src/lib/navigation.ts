@@ -1,5 +1,5 @@
 /**
- * OSIRIS — live navigation engine.
+ * OASIS VISION — live navigation engine.
  *
  * Pure geometry and state transitions for turn-by-turn guidance, kept out of
  * the component so the parts that decide "where am I on this route, what do I

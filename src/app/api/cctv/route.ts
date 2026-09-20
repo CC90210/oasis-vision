@@ -46,7 +46,7 @@ import {
 } from './world-live';
 
 /**
- * OSIRIS — Worldwide CCTV Camera API v2
+ * OASIS VISION — Worldwide CCTV Camera API v2
  * Viewport-aware: pass ?region=xx to load cameras for specific regions
  * Supports: uk, us-east, us-west, us-central, canada, europe, asia
  * Or pass ?lat=x&lng=y&radius=5 for proximity-based loading
@@ -519,7 +519,7 @@ function withBudget(region: string, fetcher: RegionFetcher): ReturnType<RegionFe
         // request. Serve the frame we already hold instead.
         const stale = peekSource<Awaited<ReturnType<RegionFetcher>>[number]>(`cctv:${region}`);
         console.warn(
-          `[OSIRIS] cctv:${region} over ${REGION_BUDGET_MS}ms — ` +
+          `[OASIS] cctv:${region} over ${REGION_BUDGET_MS}ms — ` +
           (stale.length ? `serving ${stale.length} cached cameras` : 'returning without it'),
         );
         resolve(stale);

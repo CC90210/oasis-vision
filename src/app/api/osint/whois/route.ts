@@ -55,7 +55,7 @@ export async function GET(req: Request) {
         results.expiration = events.find((e: any) => e.action === 'expiration')?.date;
         results.last_changed = events.find((e: any) => e.action === 'last changed')?.date;
       }
-    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
+    } catch (e) { console.warn('[OASIS] Suppressed error:', e instanceof Error ? e.message : e); }
 
     // HTTP headers for tech fingerprinting — go through safeFetch so the
     // attacker can't aim a HEAD request at internal infrastructure with a
@@ -89,7 +89,7 @@ export async function GET(req: Request) {
       if (headers['x-content-type-options']) score += 1;
       if (headers['referrer-policy']) score += 1;
       results.security_score = { score, max: 7, grade: score >= 5 ? 'A' : score >= 3 ? 'B' : score >= 1 ? 'C' : 'F' };
-    } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
+    } catch (e) { console.warn('[OASIS] Suppressed error:', e instanceof Error ? e.message : e); }
 
     // OFAC SDN cross-check on RDAP entity names/orgs.
     try {
@@ -106,7 +106,7 @@ export async function GET(req: Request) {
       results.sanctions_match = hits.length
         ? { source: 'OFAC SDN', hits }
         : null;
-    } catch (e) { console.warn('[OSIRIS] Sanctions cross-check failed:', e instanceof Error ? e.message : e); }
+    } catch (e) { console.warn('[OASIS] Sanctions cross-check failed:', e instanceof Error ? e.message : e); }
 
     return NextResponse.json(results);
   } catch {

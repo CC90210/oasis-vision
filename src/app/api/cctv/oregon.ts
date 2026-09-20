@@ -3,7 +3,7 @@ import { stealthFetch } from '@/lib/stealthFetch';
 import { cachedSource } from '@/lib/sourceCache';
 
 /**
- * OSIRIS — Oregon CCTV Cameras (ODOT TripCheck)
+ * OASIS VISION — Oregon CCTV Cameras (ODOT TripCheck)
  * Source: https://www.tripcheck.com/Scripts/map/data/cctvinventory.js
  * ~1,100 cameras statewide — NO API KEY NEEDED.
  *
@@ -70,7 +70,7 @@ async function loadOregonCameras(): Promise<CctvCamera[]> {
     cams.push(cam);
   }
 
-  console.log(`[OSIRIS] Oregon cameras — ODOT TripCheck: ${cams.length}`);
+  console.log(`[OASIS] Oregon cameras — ODOT TripCheck: ${cams.length}`);
   return cams;
 }
 

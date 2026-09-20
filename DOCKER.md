@@ -2,7 +2,7 @@
 
 > **No prebuilt image is published for this fork.** OASIS VISION is built from
 > source — the commands below do that. Earlier revisions of this guide pointed at
-> `ghcr.io/simplifaisoul/osiris:latest`, which is the UPSTREAM project's image:
+> `ghcr.io/simplifaisoul/oasis-vision:latest`, which is the UPSTREAM project's image:
 > pulling it gives you a different application, not this one.
 
 
@@ -17,11 +17,19 @@ app, and configuring the optional API keys.
 
 ---
 
+> **Renamed 2026-09-19:** the host-port variable is now **`OASIS_PORT`**
+> (was `OSIRIS_PORT`). The launcher scripts already read `OASIS_PORT`, so the
+> two disagreed; they now match. If you set the old name in a local env file,
+> rename it. Compose services are `oasis-vision`, `oasis-vision-cache` and
+> `oasis-vision-intel`.
+
+---
+
 ## 1. Docker Compose (recommended)
 
 ```bash
 git clone https://github.com/CC90210/oasis-vision.git
-cd osiris
+cd oasis-vision
 
 # optional: configure keys / scanner backend
 cp .env.template .env        # then edit .env
@@ -36,14 +44,14 @@ What the compose file does:
 - **`build:`** — compose builds the image locally from the `Dockerfile`, so
   you always run the code you just cloned. To run the prebuilt registry image
   instead — but note that no image is published for this fork, so the compose
-  file builds from source. Do NOT substitute the upstream image in the `osiris`
+  file builds from source. Do NOT substitute the upstream image in the `oasis-vision`
   service and drop the `build:` block.
 - **`env_file: .env` (`required: false`)** — if a `.env` file exists its
   values are injected into the container; if it's missing, OASIS VISION still starts
   with the keyless feeds.
-- **`ports: ${OSIRIS_PORT:-3000}:3000`** — the web UI. The container always
-  listens on 3000; the published **host** port is `OSIRIS_PORT` (default
-  `3000`). Set `OSIRIS_PORT` in `.env` to remap it, e.g. `OSIRIS_PORT=3005`
+- **`ports: ${OASIS_PORT:-3000}:3000`** — the web UI. The container always
+  listens on 3000; the published **host** port is `OASIS_PORT` (default
+  `3000`). Set `OASIS_PORT` in `.env` to remap it, e.g. `OASIS_PORT=3005`
   when 3000 is already in use — no need to edit the compose file.
 - **`restart: unless-stopped`** — survives reboots.
 
@@ -64,7 +72,7 @@ run OASIS VISION:
 ```bash
 # No image is published for this fork — build it yourself:
 docker compose build
-docker run -d --name osiris \
+docker run -d --name oasis-vision \
   -p 3005:3000 --env-file .env --restart unless-stopped \
   oasis-vision:local
 ```
@@ -74,8 +82,8 @@ The package is public — no `docker login` is required to pull it.
 ### Plain `docker run`
 
 ```bash
-docker build -t osiris:latest .
-docker run -d --name osiris -p 3000:3000 --env-file .env --restart unless-stopped osiris:latest
+docker build -t oasis-vision:latest .
+docker run -d --name oasis-vision -p 3000:3000 --env-file .env --restart unless-stopped oasis-vision:latest
 ```
 
 ### Image details
@@ -96,12 +104,12 @@ reads.
 **Install:**
 
 1. On the CasaOS host, clone the repo somewhere persistent (e.g.
-   `/DATA/AppData/osiris`).
+   `/DATA/AppData/oasis-vision`).
 2. CasaOS dashboard → **`+`** → **Install a customized app** → paste the
    contents of `docker-compose.yml`.
    *(or simply run `docker compose up -d` from the cloned directory).*
 3. OASIS VISION appears on the dashboard with its icon, reachable on host port
-   `3000` (or whatever `OSIRIS_PORT` you set in `.env`).
+   `3000` (or whatever `OASIS_PORT` you set in `.env`).
 
 The app icon is the gold Eye-of-Horus mark in
 `public/casaos-icon.png` (512×512 PNG), referenced by the `icon:` URL in the
@@ -109,8 +117,8 @@ metadata.
 
 > CasaOS stores imported compose files under `/var/lib/casaos/apps/`, so a
 > relative `build:` context may not resolve there. If importing the YAML
-> directly, either build/tag `osiris:latest` first
-> (`docker build -t osiris:latest /path/to/osiris`) or replace the `build:`
+> directly, either build/tag `oasis-vision:latest` first
+> (`docker build -t oasis-vision:latest /path/to/oasis-vision`) or replace the `build:`
 > block. No image is published for this fork; `docker compose build` produces
 > `oasis-vision:local` from the source you cloned.
 
@@ -125,7 +133,7 @@ Copy `.env.template` to `.env` and fill in only what you need.
 | Variable | Purpose | Required for |
 |----------|---------|--------------|
 | `SCANNER_URL` | RECON scanner backend base URL (e.g. `http://scanner:7700`) | RECON toolkit (quick/ssl/headers/rdns/subdomains/tech/whois/geoloc/vuln) |
-| `SCANNER_KEY` | Shared secret; **must equal the backend's `OSIRIS_KEY`** | RECON toolkit |
+| `SCANNER_KEY` | Shared secret; **must equal the backend's `OASIS_KEY`** | RECON toolkit |
 
 Without `SCANNER_URL`/`SCANNER_KEY` the RECON endpoints return `503` and the
 rest of OASIS VISION works normally. Generate a key with `openssl rand -hex 32`.
@@ -150,8 +158,8 @@ them only if you extend the relevant route or hit rate limits.
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `OSIRIS_TELEGRAM_CHANNELS` | Comma-separated list of public Telegram channel usernames (no `@`) to scrape for the **Telegram intel** map layer. Overrides the curated default set. | `osintdefender,insiderpaper,aljazeeraenglish,nexta_live,war_monitor` |
-| `OSIRIS_PORT` | Host port the compose file publishes (container itself always listens on 3000). | `3000` |
+| `OASIS_TELEGRAM_CHANNELS` | Comma-separated list of public Telegram channel usernames (no `@`) to scrape for the **Telegram intel** map layer. Overrides the curated default set. | `osintdefender,insiderpaper,aljazeeraenglish,nexta_live,war_monitor` |
+| `OASIS_PORT` | Host port the compose file publishes (container itself always listens on 3000). | `3000` |
 
 ### Keyless sources (no configuration needed)
 

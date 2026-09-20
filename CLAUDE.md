@@ -38,7 +38,7 @@ Node 20+ required (24 is what it is developed on). macOS: `brew install node`.
 | Task | macOS / Linux | Windows |
 |---|---|---|
 | Start | `launcher/oasis-vision.sh` | `launcher\OASIS-VISION.cmd` |
-| Server only | `launcher/oasis-vision.sh --no-window` | `...\osiris-launch.ps1 -NoWindow` |
+| Server only | `launcher/oasis-vision.sh --no-window` | `...\oasis-vision-launch.ps1 -NoWindow` |
 | Phone / LAN | `launcher/oasis-vision.sh --lan` | `launcher\OASIS-VISION-mobile.cmd` |
 | Stop | `launcher/oasis-vision.sh --stop` | `launcher\stop.cmd` |
 | Rebuild | `launcher/rebuild.sh` | `launcher\rebuild.cmd` |
@@ -96,7 +96,7 @@ src/app/api/cctv/          43 camera sources; route.ts registers regions
    opencctv.ts             9 world regions off a 145k shared index
 src/app/api/osint/         RECON toolkit routes
 src/components/
-   OsirisMap.tsx           the MapLibre globe
+   OasisMap.tsx           the MapLibre globe
    CameraViewer.tsx        full camera modal
    CctvPreviews.tsx        camera tiles on the map
    OsintPanel.tsx          RECON toolkit

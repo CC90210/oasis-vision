@@ -4,9 +4,9 @@ import type { IncomingHttpHeaders } from 'http';
 import type { Readable } from 'stream';
 
 /**
- * OSIRIS — JSON fetch over Node's https client.
+ * OASIS VISION — JSON fetch over Node's https client.
  *
- * Some upstreams OSIRIS depends on cannot be reached with the bundled undici
+ * Some upstreams OASIS VISION depends on cannot be reached with the bundled undici
  * `fetch` from the Next server runtime — it stalls and throws
  * UND_ERR_CONNECT_TIMEOUT after 10s, while `https.get` to the same URL returns
  * in a few hundred ms. This helper is the shared escape hatch.
@@ -20,17 +20,17 @@ import type { Readable } from 'stream';
  * Identifies THIS app on every outbound request.
  *
  * Until now this carried the upstream fork's name and repo
- * (`OSIRIS-OSINT/1.0 (+https://github.com/simplifaisoul/osiris)`), which was
+ * (`OASIS-VISION/1.0 (+https://github.com/CC90210/oasis-vision)`), which was
  * not a cosmetic leftover: Nominatim's usage policy requires a UA that traces
  * back to the operator actually making the calls. Every request we sent looked
  * like the original author's project, so a rate-limit block earned by us would
  * have landed on them, and our own traffic was unattributable when we needed to
  * argue about it. Keep the repo URL reachable — that link is the contact route.
  *
- * The identifier is still spelled OSIRIS_UA because `malware-live.ts` imports it
+ * The identifier is still spelled OASIS_UA because `malware-live.ts` imports it
  * under that name; the wire value is what upstreams see.
  */
-export const OSIRIS_UA = 'OASIS-VISION/1.0 (+https://github.com/CC90210/oasis-vision)';
+export const OASIS_UA = 'OASIS-VISION/1.0 (+https://github.com/CC90210/oasis-vision)';
 
 export interface RequestOptions {
   timeoutMs?: number;
@@ -56,7 +56,7 @@ function request(url: string, { timeoutMs = 20000, headers = {} }: RequestOption
     const req = https.get(
       url,
       {
-        headers: { 'User-Agent': OSIRIS_UA, Accept: 'application/json', 'Accept-Language': 'en', ...headers },
+        headers: { 'User-Agent': OASIS_UA, Accept: 'application/json', 'Accept-Language': 'en', ...headers },
         timeout: timeoutMs,
       },
       (res) => {

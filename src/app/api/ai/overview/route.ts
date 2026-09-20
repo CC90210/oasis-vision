@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════
- *  OSIRIS — One-Click AI Overview
+ *  OASIS VISION — One-Click AI Overview
  *  POST /api/ai/overview   body: { mode: 'alerts' | 'markets' | 'chain', payload }
  *
  *  Generates a punchy intelligence read-out for the Alerts or Markets
@@ -228,14 +228,14 @@ async function geminiOverview(mode: Mode, digest: Digest, keys: string[]): Promi
     const model = client.getGenerativeModel({
       model: 'gemini-2.0-flash',
       systemInstruction:
-        'You are OSIRIS, a terse intelligence analyst. Given structured facts, write a sharp 2-4 sentence situational read-out. No preamble, no markdown headers, no hedging. Lead with the bottom line.',
+        'You are OASIS VISION, a terse intelligence analyst. Given structured facts, write a sharp 2-4 sentence situational read-out. No preamble, no markdown headers, no hedging. Lead with the bottom line.',
     });
     const prompt = `MODE: ${mode.toUpperCase()}\nBOTTOM LINE: ${digest.summaryLine}\nFACTS:\n${digest.facts.map(f => `- ${f}`).join('\n')}\n\nWrite the read-out now.`;
     const result = await model.generateContent(prompt);
     const text = result.response.text().trim();
     return text || null;
   } catch (e) {
-    console.warn('[OSIRIS] Gemini overview failed, using heuristic:', e);
+    console.warn('[OASIS] Gemini overview failed, using heuristic:', e);
     return null;
   }
 }

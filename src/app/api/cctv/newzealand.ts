@@ -3,7 +3,7 @@ import { stealthFetch } from '@/lib/stealthFetch';
 import { cachedSource } from '@/lib/sourceCache';
 
 /**
- * OSIRIS — New Zealand CCTV Cameras (NZTA Waka Kotahi)
+ * OASIS VISION — New Zealand CCTV Cameras (NZTA Waka Kotahi)
  * Source: https://trafficnz.info/service/traffic/rest/4/cameras/all
  * ~320 state-highway cameras nationwide — NO API KEY NEEDED.
  *
@@ -88,7 +88,7 @@ async function loadNewZealandCameras(): Promise<CctvCamera[]> {
   if (!res.ok) throw new Error(`NZTA HTTP ${res.status}`);
 
   const cams = parseNzXml(await res.text());
-  console.log(`[OSIRIS] New Zealand cameras — NZTA: ${cams.length}`);
+  console.log(`[OASIS] New Zealand cameras — NZTA: ${cams.length}`);
   return cams;
 }
 

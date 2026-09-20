@@ -272,17 +272,17 @@ async function getOpenSkyToken(): Promise<string | null> {
         signal: AbortSignal.timeout(10000),
       }
     );
-    if (!res.ok) { console.warn('[OSIRIS] OpenSky token failed:', res.status); return null; }
+    if (!res.ok) { console.warn('[OASIS] OpenSky token failed:', res.status); return null; }
     const data = await res.json();
     if (!data.access_token) {
-      console.warn('[OSIRIS] OpenSky token response missing access_token');
+      console.warn('[OASIS] OpenSky token response missing access_token');
       return null;
     }
     osToken = data.access_token;
     osTokenExpiry = Date.now() + ((data.expires_in || 1800) - 60) * 1000;
     return osToken;
   } catch (e) {
-    console.warn('[OSIRIS] OpenSky token error:', e);
+    console.warn('[OASIS] OpenSky token error:', e);
     return null;
   }
 }
@@ -352,10 +352,10 @@ export async function GET() {
           const data = await milRes.value.json();
           ingestAc(data.ac || [], allRaw, seenHex);
         } catch (e) {
-          console.warn('[OSIRIS] adsb.fi mil parse error:', e);
+          console.warn('[OASIS] adsb.fi mil parse error:', e);
         }
       } else {
-        console.warn('[OSIRIS] adsb.fi mil feed returned', milRes.value.status);
+        console.warn('[OASIS] adsb.fi mil feed returned', milRes.value.status);
         await milRes.value.body?.cancel();
       }
     }
@@ -366,7 +366,7 @@ export async function GET() {
     if (osRes.status === 'fulfilled') {
       if (osRes.value.status === 429) {
         openSkyCooldownUntil = Date.now() + OPENSKY_COOLDOWN;
-        console.warn('[OSIRIS] OpenSky 429 — cooling down 15 min');
+        console.warn('[OASIS] OpenSky 429 — cooling down 15 min');
         await osRes.value.body?.cancel();
       } else if (osRes.value.ok) {
         try {
@@ -387,11 +387,11 @@ export async function GET() {
             osSnapshotTime = Date.now();
           }
         } catch (e) {
-          console.warn('[OSIRIS] OpenSky parse error:', e);
+          console.warn('[OASIS] OpenSky parse error:', e);
         }
       } else {
         // A rejected token surfaces here as a 401 — previously discarded silently.
-        console.warn('[OSIRIS] OpenSky returned', osRes.value.status);
+        console.warn('[OASIS] OpenSky returned', osRes.value.status);
         await osRes.value.body?.cancel();
       }
     }
@@ -408,7 +408,7 @@ export async function GET() {
     // 60s maxDuration above.
     if (!openSkyWorked) {
       source = 'regional';
-      console.warn('[OSIRIS] no OpenSky snapshot — falling back to adsb.fi regional sweep');
+      console.warn('[OASIS] no OpenSky snapshot — falling back to adsb.fi regional sweep');
 
       for (const r of REGIONS) {
         ingestAc(await fetchAdsbFiRegion(r.lat, r.lon), allRaw, seenHex);
@@ -417,7 +417,7 @@ export async function GET() {
 
       if (allRaw.length === 0) {
         console.error(
-          '[OSIRIS] every flight provider returned zero aircraft — ' +
+          '[OASIS] every flight provider returned zero aircraft — ' +
           'set OPENSKY_CLIENT_ID/OPENSKY_CLIENT_SECRET (free at opensky-network.org); ' +
           'the anonymous 400 credits/day pool cannot sustain a live map'
         );
@@ -481,11 +481,11 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error('[OSIRIS] Flight fetch error:', error);
+    console.error('[OASIS] Flight fetch error:', error);
     fetchPromise = null;
     // Stale-cache fallback: return last known good data instead of blank map
     if (cachedData) {
-      console.warn('[OSIRIS] Returning stale flight cache as fallback');
+      console.warn('[OASIS] Returning stale flight cache as fallback');
       return NextResponse.json({ ...cachedData, source: (cachedData.source || 'unknown') + '+stale' }, {
         headers: { 'Cache-Control': 'no-store, max-age=0' },
       });

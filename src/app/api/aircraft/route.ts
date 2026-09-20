@@ -6,7 +6,7 @@ import { nearestAirport, type Airport } from '@/lib/airports';
 export const maxDuration = 20;
 
 /**
- * OSIRIS — Aircraft identity and flown track.
+ * OASIS VISION — Aircraft identity and flown track.
  *
  * The live feed only carries what the transponder broadcasts, so `model` came
  * through as "Unknown" for most airliners and as a bare ICAO type code ("H60")
@@ -262,7 +262,7 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=600' },
     });
   } catch (error) {
-    console.error('[OSIRIS] Aircraft lookup error:', error);
+    console.error('[OASIS] Aircraft lookup error:', error);
     return NextResponse.json({ error: 'Aircraft lookup failed' }, { status: 500 });
   }
 }

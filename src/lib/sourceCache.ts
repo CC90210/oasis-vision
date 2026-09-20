@@ -1,5 +1,5 @@
 /**
- * OSIRIS — upstream source cache.
+ * OASIS VISION — upstream source cache.
  *
  * Camera *indexes* (where the cameras are) change on the order of weeks, while
  * the frames themselves are pulled live by the client straight from the source.
@@ -70,12 +70,12 @@ export function cachedSource<T>(
         return data;
       } catch (e) {
         if (entry?.data.length) {
-          console.warn(`[OSIRIS] ${key} refresh failed — serving ${entry.data.length} cached cameras`);
+          console.warn(`[OASIS] ${key} refresh failed — serving ${entry.data.length} cached cameras`);
           // Retry sooner than a full TTL, but don't hammer the failing upstream.
           store.set(key, { data: entry.data, expiresAt: now + 60_000, inflight: null });
           return entry.data;
         }
-        console.warn(`[OSIRIS] ${key} fetch failed with no cache to fall back on:`, e);
+        console.warn(`[OASIS] ${key} fetch failed with no cache to fall back on:`, e);
         store.set(key, { data: [], expiresAt: now + 60_000, inflight: null });
         return [];
       }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 /**
- * OSIRIS — SCM Supplier Risk Overlay
+ * OASIS VISION — SCM Supplier Risk Overlay
  * Calculates intersection between live global threats (Earthquakes, Fires, Conflicts)
  * and static Tier 1/2 Supplier coordinates.
  */

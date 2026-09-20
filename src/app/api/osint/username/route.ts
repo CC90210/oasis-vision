@@ -3,7 +3,7 @@ import { isRateLimited, getClientIp } from '@/lib/ssrf-guard';
 import { scanUsername, isValidUsername } from '@/lib/sherlock';
 
 /**
- * OSIRIS — Username enumeration across social platforms.
+ * OASIS VISION — Username enumeration across social platforms.
  *
  * Implements the Sherlock Project's detection rules against its site
  * database (MIT). Keyless.
@@ -57,7 +57,7 @@ export async function GET(req: Request) {
       { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' } }
     );
   } catch (e) {
-    console.error('[OSIRIS] username scan failed:', e);
+    console.error('[OASIS] username scan failed:', e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Username scan failed' },
       { status: 502 }

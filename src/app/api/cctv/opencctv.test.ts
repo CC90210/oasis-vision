@@ -16,7 +16,7 @@ const sampleRow: OpenCctvRecord = {
 };
 
 describe('streamKind', () => {
-  it('translates the feed types OSIRIS can play', () => {
+  it('translates the feed types OASIS VISION can play', () => {
     expect(streamKind('m3u8')).toBe('hls');
     expect(streamKind('mjpeg')).toBe('mjpeg');
     expect(streamKind('image')).toBe('jpg');

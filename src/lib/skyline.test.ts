@@ -64,7 +64,7 @@ const liveIt = process.env.RUN_LIVE_TESTS === '1' ? it : it.skip;
 describe('skyline resolution (live)', () => {
   liveIt('resolves the Yubatake page to a playable YouTube id', async () => {
     const res = await fetch('https://www.skylinewebcams.com/en/webcam/japan/gunma/yubatake/yubatake.html', {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OSIRIS/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; OASIS-VISION/1.0)' },
       signal: AbortSignal.timeout(15000),
     });
     expect(res.ok).toBe(true);

@@ -3,7 +3,7 @@ import { stealthFetch } from '@/lib/stealthFetch';
 import { cachedSource } from '@/lib/sourceCache';
 
 /**
- * OSIRIS — Hong Kong CCTV Cameras (Transport Department)
+ * OASIS VISION — Hong Kong CCTV Cameras (Transport Department)
  * Source: https://data.gov.hk — Traffic Snapshot Images
  *   Location index: static.data.gov.hk/td/traffic-snapshot-images/code/Traffic_Camera_Locations_En.xml
  *   Snapshots:      tdcctv.data.one.gov.hk/<key>.JPG
@@ -101,7 +101,7 @@ export async function fetchHongKongCameras(): Promise<CctvCamera[]> {
   if (td.length > 0) return td;
 
   // Only reached when the index is down *and* nothing was ever cached.
-  console.warn('[OSIRIS] Hong Kong TD index unavailable — using curated fallback');
+  console.warn('[OASIS] Hong Kong TD index unavailable — using curated fallback');
   return CURATED_FALLBACK.map((cam) => ({
     id: `hk-${cam.id}`,
     lat: cam.lat,

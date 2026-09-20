@@ -2,7 +2,7 @@ import { allEntries, type SanctionEntry } from '@/lib/sanctions';
 
 /**
  * ═══════════════════════════════════════════════════════════════
- *  OSIRIS — Daily chain-threat brief
+ *  OASIS VISION — Daily chain-threat brief
  *
  *  Three independent keyless feeds, each verified against live data:
  *    exploits   DefiLlama /hacks       — dated on-chain incidents + losses

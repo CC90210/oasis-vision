@@ -3,7 +3,7 @@ import { stealthFetch } from '@/lib/stealthFetch';
 import { cachedSource } from '@/lib/sourceCache';
 
 /**
- * OSIRIS — Michigan CCTV Cameras (MDOT MiDrive)
+ * OASIS VISION — Michigan CCTV Cameras (MDOT MiDrive)
  * Source: https://mdotjboss.state.mi.us/MiDrive/camera/list
  * ~800 cameras statewide — NO API KEY NEEDED.
  *
@@ -86,7 +86,7 @@ async function loadMichiganCameras(): Promise<CctvCamera[]> {
     cams.push(cam);
   }
 
-  console.log(`[OSIRIS] Michigan cameras — MDOT MiDrive: ${cams.length}`);
+  console.log(`[OASIS] Michigan cameras — MDOT MiDrive: ${cams.length}`);
   return cams;
 }
 

@@ -1,4 +1,4 @@
 @echo off
 setlocal
-rem Stop the OSIRIS background server
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0osiris-stop.ps1"
+rem Stop the OASIS VISION background server
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0oasis-vision-stop.ps1"

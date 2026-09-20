@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 /**
- * OSIRIS — Air Quality Monitoring API
+ * OASIS VISION — Air Quality Monitoring API
  * Fetches real-time global air quality data from OpenAQ
  * FREE — No API key required
  * Data: PM2.5, PM10, O3, NO2, SO2, CO measurements worldwide

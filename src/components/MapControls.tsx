@@ -6,7 +6,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Minus, Plus } from '
 import type { Map as MlMap } from 'maplibre-gl';
 
 /**
- * OSIRIS — on-screen map controls
+ * OASIS VISION — on-screen map controls
  *
  * On a desktop the camera could only be driven by the two mouse gestures: the
  * wheel to zoom, a held drag to pan. Neither is available on a trackpad-less

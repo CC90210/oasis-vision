@@ -4,7 +4,7 @@ import { buildQuery, parseWkt } from './ibi511';
 import type { CctvCamera } from './types';
 
 /**
- * OSIRIS — Louisiana CCTV Cameras (LADOTD / 511la.org)
+ * OASIS VISION — Louisiana CCTV Cameras (LADOTD / 511la.org)
  * Source: https://511la.org — the same IBI 511 stack Utah and Nevada run on
  * Data endpoint: /List/GetData/Cameras (DataTables, 100 rows/page)
  * 336 statewide traffic cameras — NO API KEY NEEDED.
@@ -136,7 +136,7 @@ async function loadLouisianaCameras(): Promise<CctvCamera[]> {
   }
 
   const cams = [...seen.values()];
-  console.log(`[OSIRIS] Louisiana cameras — LADOTD: ${cams.length}`);
+  console.log(`[OASIS] Louisiana cameras — LADOTD: ${cams.length}`);
   return cams;
 }
 

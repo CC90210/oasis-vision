@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 
 /**
- * OSIRIS — Military-Grade Intelligence API
+ * OASIS VISION — Military-Grade Intelligence API
  * Fetches Telegram OSINT feeds directly, with a failsafe fallback 
  * to traditional intelligence sources if Telegram blocks the IP.
  */

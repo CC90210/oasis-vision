@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * OSIRIS — ArcGIS Public Data Integration
+ * OASIS VISION — ArcGIS Public Data Integration
  *
  * Two query modes:
  *   1. Search:  ?q=keyword&bbox=-105,35,-94,42

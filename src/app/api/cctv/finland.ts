@@ -1,7 +1,7 @@
 import { stealthFetch } from '@/lib/stealthFetch';
 
 /**
- * OSIRIS — Finland CCTV Cameras (Digitraffic / Fintraffic)
+ * OASIS VISION — Finland CCTV Cameras (Digitraffic / Fintraffic)
  * Source: https://tie.digitraffic.fi/api/weathercam/v1/stations
  * ~470 weathercam stations across Finland — NO API KEY NEEDED
  */
@@ -10,7 +10,7 @@ export async function fetchFinlandCameras(): Promise<any[]> {
   try {
     const res = await stealthFetch('https://tie.digitraffic.fi/api/weathercam/v1/stations', {
       signal: AbortSignal.timeout(12000),
-      headers: { 'Digitraffic-User': 'OSIRIS/1.0' },
+      headers: { 'Digitraffic-User': 'OASIS-VISION/1.0' },
     });
     if (!res.ok) return [];
 

@@ -4,7 +4,7 @@ import { stealthFetch } from '@/lib/stealthFetch';
 export const dynamic = 'force-dynamic';
 
 /**
- * OSIRIS — Live Conflict Zone Intelligence API
+ * OASIS VISION — Live Conflict Zone Intelligence API
  * 
  * Aggregates real-time conflict data from:
  * 1. GDELT GEO 2.0 API — real-time geo-located conflict events
@@ -193,13 +193,13 @@ async function fetchAllLiveConflictData(): Promise<{ events: ConflictEvent[]; ev
         });
         
         if (!res.ok) {
-          console.log(`[OSIRIS] RSS Fetch Failed for ${url}: ${res.status}`);
+          console.log(`[OASIS] RSS Fetch Failed for ${url}: ${res.status}`);
           return [];
         }
         
         const xml = await res.text();
         const rawItems = xml.split(/<item>/i).slice(1);
-        console.log(`[OSIRIS] RSS ${url} returned ${rawItems.length} items`);
+        console.log(`[OASIS] RSS ${url} returned ${rawItems.length} items`);
         
         return rawItems.map(rawItem => {
           const item = rawItem.split(/<\/item>/i)[0];
@@ -215,7 +215,7 @@ async function fetchAllLiveConflictData(): Promise<{ events: ConflictEvent[]; ev
           };
         }).filter(Boolean);
       } catch (err) {
-        console.log(`[OSIRIS] RSS Fetch Error for ${url}:`, (err as Error).message);
+        console.log(`[OASIS] RSS Fetch Error for ${url}:`, (err as Error).message);
         return [];
       }
     });
@@ -262,7 +262,7 @@ async function fetchAllLiveConflictData(): Promise<{ events: ConflictEvent[]; ev
         }
       }
     }
-    console.log(`[OSIRIS] Mapped ${allEvents.length} conflict events from RSS.`);
+    console.log(`[OASIS] Mapped ${allEvents.length} conflict events from RSS.`);
   } catch (e) {
     console.error('OSINT Conflict Fetch Error:', e);
   }
@@ -313,7 +313,7 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error('[OSIRIS] Conflict API error:', error);
+    console.error('[OASIS] Conflict API error:', error);
     
     // Fallback: return known zones without live enrichment
     const fallbackZones = KNOWN_CONFLICTS.map(zone => ({

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 /**
- * OSIRIS — Instrument price history.
+ * OASIS VISION — Instrument price history.
  *
  * OHLC candles for one symbol, for the chart in the markets panel. Each range
  * carries its own interval: a day at 5-minute bars, a year at weekly ones, so

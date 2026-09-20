@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Newspaper, ChevronDown, ChevronUp, ExternalLink, MapPin, Zap } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════
-   OSIRIS — Intelligence Feed
+   OASIS VISION — Intelligence Feed
    SIGINT-style news aggregation with risk scoring
    ═══════════════════════════════════════════════════════════════ */
 
@@ -68,7 +68,7 @@ export default function IntelFeed({ data, onLocate }: IntelFeedProps) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-[var(--alert-green)] animate-osiris-pulse" />
+          <div className="w-1.5 h-1.5 rounded-full bg-[var(--alert-green)] animate-oasis-pulse" />
           {expanded ? <ChevronUp className="w-3 h-3 text-[var(--text-muted)]" /> : <ChevronDown className="w-3 h-3 text-[var(--text-muted)]" />}
         </div>
       </button>

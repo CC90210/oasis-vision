@@ -5,7 +5,7 @@ import type { DrawMode, DrawProgress } from '@/lib/draw';
 import { formatArea, formatDistance } from '@/lib/geo';
 
 /**
- * OSIRIS — on-map drawing HUD
+ * OASIS VISION — on-map drawing HUD
  *
  * While a shape is being drawn the operator is looking at the map, not at a
  * panel on the far side of the screen. Guidance that lives in the panel is

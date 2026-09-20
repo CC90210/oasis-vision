@@ -3,7 +3,7 @@ import { cachedSource } from '@/lib/sourceCache';
 import type { CctvCamera, CctvStreamType } from './types';
 
 /**
- * OSIRIS — Asian cameras via the OpenCCTV directory.
+ * OASIS VISION — Asian cameras via the OpenCCTV directory.
  *
  * Source: https://opencctv.org — an aggregator carrying ~145,000 cameras, of
  * which ~30,000 sit inside the Asian boxes below, most of them republished
@@ -125,7 +125,7 @@ export interface OpenCctvRecord {
   cache_buster_breaks_url?: boolean;
 }
 
-/** OpenCCTV's `feed_type` in OSIRIS's vocabulary; null means unusable. */
+/** OpenCCTV's `feed_type` in OASIS VISION's vocabulary; null means unusable. */
 export function streamKind(feedType?: string | null): CctvStreamType | 'jpg' | null {
   switch ((feedType || '').toLowerCase()) {
     case 'm3u8':
@@ -252,7 +252,7 @@ function loader(region: string, bounds: Bounds, cap: number) {
     }
 
     const cams = [...seen.values()];
-    console.log(`[OSIRIS] ${region} cameras — OpenCCTV: ${cams.length} of ${inRegion.length} in region`);
+    console.log(`[OASIS] ${region} cameras — OpenCCTV: ${cams.length} of ${inRegion.length} in region`);
     return cams;
   };
 }

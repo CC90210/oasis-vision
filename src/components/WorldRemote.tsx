@@ -348,7 +348,7 @@ export default function WorldRemote({onClose,onPlaceOnMap}:{onClose?:()=>void,on
           <button onClick={()=>setFull(!full)} className="p-1.5 -m-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-colors" title="Full Screen">
             {full?<Minimize2 className="w-3.5 h-3.5"/>:<Maximize2 className="w-3.5 h-3.5"/>}
           </button>
-          <div className="w-1.5 h-1.5 rounded-full bg-[var(--cyan-primary)] animate-osiris-pulse"/>
+          <div className="w-1.5 h-1.5 rounded-full bg-[var(--cyan-primary)] animate-oasis-pulse"/>
           <button onClick={()=>setExpanded(!expanded)}>
             {expanded?<ChevronUp className="w-3.5 h-3.5 text-[var(--text-muted)]"/>:<ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]"/>}
           </button>

@@ -2,7 +2,7 @@
 #
 # OASIS VISION launcher for macOS and Linux.
 #
-# Mirrors launcher/osiris-launch.ps1: starts the standalone Next.js server bound
+# Mirrors launcher/oasis-vision-launch.ps1: starts the standalone Next.js server bound
 # to loopback and opens a chromeless application window. Safe to run twice - if
 # the server is already up it just re-opens the window.
 #

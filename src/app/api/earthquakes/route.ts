@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 
 /**
- * OSIRIS — Earthquake Data API
+ * OASIS VISION — Earthquake Data API
  * Fetches real-time seismic events from USGS (last 24h, M2.5+)
  * No API key required
  */

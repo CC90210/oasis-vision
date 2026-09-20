@@ -32,7 +32,7 @@ interface SatelliteRow {
 }
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-interface OsirisMapProps {
+interface OasisMapProps {
   data: any;
   activeLayers: Record<string, boolean>;
   onEntityClick?: (entity: any) => void;
@@ -103,7 +103,7 @@ function computeSolarTerminator(): [number, number][] {
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] };
 
-function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, navigating = false, aircraftAirports = {} }: OsirisMapProps) {
+function OasisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightClick, onViewStateChange, flyToLocation, projection = 'globe', mapStyle = 'dark', sweepData, scanTargets = [], demoMode = false, theme = 'core', drawnPolygons = [], arcgisLayers = [], drawMode = null, onDrawComplete, onDrawProgress, onDrawCancel, drawCommand = null, onMapCenter, route = null, userLocation = null, followUser = false, onFollowInterrupt, navigating = false, aircraftAirports = {} }: OasisMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   /**
@@ -286,7 +286,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         // A failed constructor leaves its canvas behind; the next attempt needs a clean container.
         container.innerHTML = '';
         if (canvasContextAttributes === attributeFallbacks[attributeFallbacks.length - 1]) throw e;
-        console.warn('[OSIRIS] WebGL context rejected, retrying with weaker attributes:', e instanceof Error ? e.message : e);
+        console.warn('[OASIS] WebGL context rejected, retrying with weaker attributes:', e instanceof Error ? e.message : e);
       }
     }
     if (!map) return;
@@ -310,7 +310,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       const flightGov = boot.flightGov;
       const flightMil = boot.flightMilitary;
 
-      // Create icons — OSIRIS Unified Palette
+      // Create icons — OASIS VISION Unified Palette
       createIcon(map, 'plane-cyan', flightCom, 24);   
       createIcon(map, 'plane-green', flightPriv, 24);   
       createIcon(map, 'plane-pink', flightGov, 24);    
@@ -745,7 +745,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         'text-offset': [0, 1.5], 'text-allow-overlap': false,
       }, paint: { 'text-color': ['match', ['get','status'], 'DANGER','#D32F2F', 'WARNING','#E65100', '#7E57C2'], 'text-halo-color': '#000', 'text-halo-width': 1 }});
 
-      // ══ OSIRIS SDK — Lattice Intelligence Mesh ══
+      // ══ OASIS VISION SDK — Lattice Intelligence Mesh ══
       // Polybolos Style: Delicate, translucent, steel-blue splined mesh
 
       // ── SEA domain (Distinct Solid Lines) ──
@@ -809,7 +809,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
       setMapReady(true);
       // Dev-only handle. The map is otherwise unreachable from the console,
       // which makes interaction bugs guesswork rather than diagnosis.
-      if (process.env.NODE_ENV === 'development') (window as any).__osirisMap = map;
+      if (process.env.NODE_ENV === 'development') (window as any).__oasisMap = map;
     });
 
     // Events
@@ -871,7 +871,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
           <div id="ac-${idSafe(p.icao24||'')}" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);">
             <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">IDENTIFYING AIRFRAME…</span>
           </div>
-          <button onclick="window.osirisWatchFlight && window.osirisWatchFlight({ icao24: '${idSafe(p.icao24||'')}', callsign: '${idSafe(cs)}' })" style="width:100%;margin-top:8px;padding:6px 12px;background:rgba(0,229,255,0.10);border:1px solid rgba(0,229,255,0.35);color:#7FE9FF;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:bold;letter-spacing:0.1em;border-radius:4px;cursor:pointer;">+ WATCH THIS AIRCRAFT</button>
+          <button onclick="window.oasisWatchFlight && window.oasisWatchFlight({ icao24: '${idSafe(p.icao24||'')}', callsign: '${idSafe(cs)}' })" style="width:100%;margin-top:8px;padding:6px 12px;background:rgba(0,229,255,0.10);border:1px solid rgba(0,229,255,0.35);color:#7FE9FF;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:bold;letter-spacing:0.1em;border-radius:4px;cursor:pointer;">+ WATCH THIS AIRCRAFT</button>
           <div id="${routeLoadingId}" style="margin-top:8px;padding:6px;border-top:1px solid rgba(255,255,255,0.06);text-align:center;">
             <span style="color:#5C5A54;font-size:9px;letter-spacing:0.1em;">RESOLVING ROUTE…</span>
           </div>
@@ -1256,7 +1256,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     });
 
 
-    // ── OSIRIS SDK link click ──
+    // ── OASIS VISION SDK link click ──
     const SDK_SOURCE_URLS: Record<string, string> = {
       'AIS Maritime': 'https://www.marinetraffic.com',
       'AIS Stream': 'https://aisstream.io',
@@ -1270,7 +1270,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
         if (!e.features?.length) return;
         const p = e.features[0].properties as any;
         const coords = e.lngLat;
-        const srcUrl = p.url || SDK_SOURCE_URLS[p.source] || 'https://osirisai.live';
+        const srcUrl = p.url || SDK_SOURCE_URLS[p.source] || 'https://github.com/CC90210/oasis-vision';
         const domainLabel = p.domain === 'SEA' ? '⚓ MARITIME' : p.domain === 'AIR' ? '✈ AIR CORRIDOR' : '🛡 NAVAL INTEL';
         const domainColor = p.domain === 'SEA' ? '#4FC3F7' : p.domain === 'AIR' ? '#B3E5FC' : '#81D4FA';
         const linkStyle = 'text-decoration:none;padding:3px 8px;border-radius:4px;font-size:9px;font-weight:700;letter-spacing:0.05em;';
@@ -1970,7 +1970,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
     setGeo('radiation', activeLayers.radiation && data.radiation ? data.radiation.map((r: any) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [r.lng, r.lat] }, properties: { name: r.name, city: r.city, country: r.country, reading: r.reading, status: r.status, network: r.network } })) : []);
   }, [mapReady, data.radiation, activeLayers.radiation, setGeo]);
 
-  // ══ OSIRIS SDK — Lattice Sensor Mesh ══
+  // ══ OASIS VISION SDK — Lattice Sensor Mesh ══
   // Uses real submarine cable data for SEA domain, curated routes for AIR/INTEL
   useEffect(() => {
     if (!mapReady) return;
@@ -2342,7 +2342,7 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
             'fog-color': '#04040A',
             'fog-ground-blend': 0.9,
           });
-        } catch (e) { console.warn('[OSIRIS] Suppressed error:', e instanceof Error ? e.message : e); }
+        } catch (e) { console.warn('[OASIS] Suppressed error:', e instanceof Error ? e.message : e); }
       } else {
         map.easeTo({ pitch: 0, duration: 800 });
       }
@@ -3150,4 +3150,4 @@ function OsirisMap({ data, activeLayers, onEntityClick, onMouseCoords, onRightCl
   );
 }
 
-export default memo(OsirisMap);
+export default memo(OasisMap);

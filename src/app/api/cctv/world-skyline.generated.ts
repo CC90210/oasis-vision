@@ -1,10 +1,10 @@
 import type { CctvCamera } from './types';
 
 /**
- * OSIRIS — SkylineWebcams public live cameras outside Asia (GENERATED).
+ * OASIS VISION — SkylineWebcams public live cameras outside Asia (GENERATED).
  *
  * Covers Latin America, the Caribbean, Africa and the European countries that
- * have no dedicated OSIRIS traffic-authority source. Snapshot frames are routed
+ * have no dedicated OASIS VISION traffic-authority source. Snapshot frames are routed
  * through /api/cctv/proxy (cdn.skylinewebcams.com is on the proxy allow-list)
  * because the CDN sets hotlink protection.
  *

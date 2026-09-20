@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { ExternalLink, Radio, Maximize2, X } from 'lucide-react';
 
 /**
- * OSIRIS — LIVE FROM SPACE
+ * OASIS VISION — LIVE FROM SPACE
  *
  * 24/7 downlink from cameras mounted outside the International Space Station.
  *

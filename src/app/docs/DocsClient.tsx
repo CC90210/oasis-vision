@@ -381,7 +381,7 @@ npm test           # vitest
 npm run test:live  # includes tests that hit live upstream feeds`}</Pre>
             <p>
               A <Code>Dockerfile</Code> and <Code>docker-compose.yml</Code> ship with the repository. The container
-              always listens on port 3000 internally; <Code>OSIRIS_PORT</Code> controls the host port it is published
+              always listens on port 3000 internally; <Code>OASIS_PORT</Code> controls the host port it is published
               on.
             </p>
             <Pre label="Docker" lang="bash">{`cp .env.example .env
@@ -400,18 +400,18 @@ docker compose up -d`}</Pre>
               {[
                 {
                   k: 'SCANNER_URL / SCANNER_KEY',
-                  v: 'Points at the separate RECON scanner backend. SCANNER_KEY must equal that backend’s OSIRIS_KEY. Leave both empty to disable RECON — /api/scanner then returns 503 by design.',
+                  v: 'Points at the separate RECON scanner backend. SCANNER_KEY must equal that backend’s OASIS_KEY. Leave both empty to disable RECON — /api/scanner then returns 503 by design.',
                 },
                 {
                   k: 'SDK_INGEST_KEY',
                   v: 'Shared secret for /api/sdk/ingest. The endpoint fails closed: while this is unset, ingestion is disabled and returns 503.',
                 },
                 {
-                  k: 'OSIRIS_TELEGRAM_CHANNELS',
+                  k: 'OASIS_TELEGRAM_CHANNELS',
                   v: 'Comma-separated public Telegram channel names (no @) for the Telegram intel layer, overriding the curated default set.',
                 },
                 {
-                  k: 'OSIRIS_PORT',
+                  k: 'OASIS_PORT',
                   v: 'Host port the UI is published on. The container itself always listens on 3000.',
                 },
               ].map(row => (

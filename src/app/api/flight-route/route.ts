@@ -1,5 +1,5 @@
 /**
- * OSIRIS — Flight Route API (v2)
+ * OASIS VISION — Flight Route API (v2)
  *
  * Resolves callsign/ICAO24 → origin + destination airports.
  * All sources queried IN PARALLEL — first valid result wins.
@@ -280,7 +280,7 @@ export async function GET(req: NextRequest) {
       const maxReasonable = routeDist * 1.5;
       if (distToOrigin > maxReasonable && distToDest > maxReasonable) {
         // Plane is far from both endpoints — likely wrong route
-        console.warn(`[OSIRIS] Route ${callsign} ${origin.icao}→${destination.icao} rejected: plane ${Math.round(distToOrigin)}km from origin, ${Math.round(distToDest)}km from dest, route only ${Math.round(routeDist)}km`);
+        console.warn(`[OASIS] Route ${callsign} ${origin.icao}→${destination.icao} rejected: plane ${Math.round(distToOrigin)}km from origin, ${Math.round(distToDest)}km from dest, route only ${Math.round(routeDist)}km`);
         route = null;
       }
     }

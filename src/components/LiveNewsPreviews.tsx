@@ -5,7 +5,7 @@ import { layoutTile, tileHeight, tilesOverlap, type TileGeometry } from '@/lib/m
 import type { Map as MlMap } from 'maplibre-gl';
 
 /**
- * OSIRIS — live TV news playing on the map.
+ * OASIS VISION — live TV news playing on the map.
  *
  * The CCTV previews pin a live frame above a camera marker, but only past zoom
  * 13: there are ~19,000 cameras, so at any wider view the tiles would be a
@@ -48,7 +48,7 @@ const MAX_TILES = 4;
 const GEOM: TileGeometry = { width: 208, imageHeight: 117, labelHeight: 20, gap: 26 };
 const TILE_H = tileHeight(GEOM);
 
-/** The live-news layer's colour, matching news-dots in OsirisMap. */
+/** The live-news layer's colour, matching news-dots in OasisMap. */
 const NEWS = '#EC407A';
 const news = (pct: number) => `color-mix(in srgb, ${NEWS} ${pct}%, transparent)`;
 
@@ -217,7 +217,7 @@ function Connector() {
 function LiveNewsPreviews({ mapRef, active, feeds, onOpen }: {
   mapRef: React.RefObject<MlMap | null>;
   active: boolean;
-  /** The live-news records the map layer is built from — see OsirisMap. */
+  /** The live-news records the map layer is built from — see OasisMap. */
   feeds: Array<Record<string, unknown>> | undefined;
   onOpen: (feed: PreviewFeed) => void;
 }) {

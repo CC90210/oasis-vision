@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Loader2, RefreshCw, X } from 'lucide-react';
 
 /**
- * OSIRIS — One-Click AI Overview
+ * OASIS VISION — One-Click AI Overview
  * Drop-in button that generates an intelligence read-out for whatever
  * data payload it's handed. Posts to /api/ai/overview which works with
  * or without a Gemini key (heuristic analyst fallback), so it always

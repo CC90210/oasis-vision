@@ -1,5 +1,5 @@
 /**
- * OSIRIS — geodesic primitives
+ * OASIS VISION — geodesic primitives
  *
  * The measurement floor for the AOI tools. Everything here is spherical rather
  * than ellipsoidal: on WGS84 that costs up to ~0.5% on distance, which is well

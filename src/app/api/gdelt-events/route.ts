@@ -4,7 +4,7 @@ import { fetchGdeltEvents } from '@/lib/gdeltEvents';
 export const maxDuration = 60;
 
 /**
- * OSIRIS — GDELT 2.0 Geocoded Events
+ * OASIS VISION — GDELT 2.0 Geocoded Events
  * Source: GDELT Project 15-minute Events export — free, no auth required.
  * https://www.gdeltproject.org/
  *
@@ -48,7 +48,7 @@ export async function GET(req: Request) {
       }
     );
   } catch (error) {
-    console.error('[OSIRIS] GDELT events fetch failed:', error);
+    console.error('[OASIS] GDELT events fetch failed:', error);
     return NextResponse.json(
       { events: [], total: 0, error: 'Failed to fetch GDELT events' },
       { status: 502 }

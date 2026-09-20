@@ -1,5 +1,5 @@
 /**
- * OSIRIS — helpers for the IBI 511 traveler-information platform.
+ * OASIS VISION — helpers for the IBI 511 traveler-information platform.
  *
  * Several state DOTs run the same vendor stack behind different domains, and
  * they all expose cameras the same way: a DataTables endpoint at

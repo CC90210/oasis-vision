@@ -1,5 +1,5 @@
 /**
- * OSIRIS — YouTube feed primitives
+ * OASIS VISION — YouTube feed primitives
  *
  * A surprising number of public cameras are ultimately a YouTube livestream:
  * either directly, or wrapped in an operator's page (see skyline.ts). This

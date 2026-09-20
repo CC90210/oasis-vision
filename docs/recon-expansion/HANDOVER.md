@@ -211,7 +211,7 @@ if (isRateLimited(getClientIp(req), 6, 60_000)) {
 }
 ```
 
-Log with the existing prefix: `console.error('[OSIRIS] email investigation failed:', e)`.
+Log with the existing prefix: `console.error('[OASIS] email investigation failed:', e)`.
 
 ### 4.4 Inherit the false-negative fixes
 

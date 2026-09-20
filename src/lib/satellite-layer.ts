@@ -2,7 +2,7 @@ import type { CustomLayerInterface, CustomRenderMethodInput, Map as MlMap } from
 import { MercatorCoordinate } from 'maplibre-gl';
 
 /**
- * OSIRIS — satellites drawn at their real altitude
+ * OASIS VISION — satellites drawn at their real altitude
  *
  * Satellites were circle features pinned to the ground, so a 35,786 km GEO
  * bird and a 400 km ISS sat on the same surface as a traffic camera. The map
@@ -515,7 +515,7 @@ export function createSatelliteLayer(id: string): CustomLayerInterface & {
           orbitDirty = true;
           variant = shader.variantName || '';
         } catch (err) {
-          console.error('[OSIRIS] satellite layer:', err instanceof Error ? err.message : err);
+          console.error('[OASIS] satellite layer:', err instanceof Error ? err.message : err);
           return;
         }
       }

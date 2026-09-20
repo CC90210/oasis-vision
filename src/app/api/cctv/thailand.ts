@@ -1,7 +1,7 @@
 import type { CctvCamera } from './types';
 
 /**
- * OSIRIS — Thailand live cameras.
+ * OASIS VISION — Thailand live cameras.
  *
  * Thailand publishes no open machine-readable CCTV feed: the BMA's traffic
  * cameras sit behind a portal that refuses connections from here, and the

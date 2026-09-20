@@ -1,4 +1,4 @@
-# Creates Desktop + Start Menu shortcuts so OSIRIS opens like any installed app.
+# Creates Desktop + Start Menu shortcuts so OASIS VISION opens like any installed app.
 # Re-running is safe - it overwrites the existing shortcuts in place.
 $ErrorActionPreference = 'Stop'
 

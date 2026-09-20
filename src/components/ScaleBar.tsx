@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 
 /* ═══════════════════════════════════════════════════════════════
-   OSIRIS — Scale Bar
+   OASIS VISION — Scale Bar
    Dynamic map scale indicator — professional cartographic style
    ═══════════════════════════════════════════════════════════════ */
 

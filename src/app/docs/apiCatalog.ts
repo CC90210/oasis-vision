@@ -554,7 +554,7 @@ export const API_GROUPS: ApiGroup[] = [
         returns: ['detail', 'hint', 'failed', 'error'],
         env: ['SCANNER_URL', 'SCANNER_KEY'],
         notes:
-          'Returns 503 when `SCANNER_URL` / `SCANNER_KEY` are unset — that is the supported way to disable RECON. `SCANNER_KEY` must equal the backend’s `OSIRIS_KEY`.',
+          'Returns 503 when `SCANNER_URL` / `SCANNER_KEY` are unset — that is the supported way to disable RECON. `SCANNER_KEY` must equal the backend’s `OASIS_KEY`.',
       },
     ],
   },

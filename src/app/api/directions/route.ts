@@ -4,7 +4,7 @@ import { httpJson, optional } from '@/lib/httpJson';
 export const maxDuration = 30;
 
 /**
- * OSIRIS — Turn-by-turn Directions API
+ * OASIS VISION — Turn-by-turn Directions API
  *
  * Primary:  Valhalla (valhalla1.openstreetmap.de) — returns ready-made narrative
  *           instructions ("Turn right onto Torstraße.") and supports auto /
@@ -23,7 +23,7 @@ const OSRM = 'https://router.project-osrm.org/route/v1';
 
 export type TravelMode = 'auto' | 'bicycle' | 'pedestrian';
 
-/** Minimal shapes of the upstream payloads — only the fields OSIRIS reads. */
+/** Minimal shapes of the upstream payloads — only the fields OASIS VISION reads. */
 interface ValhallaManeuver {
   type?: number;
   instruction?: string;
@@ -436,7 +436,7 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
     });
   } catch (error) {
-    console.error('[OSIRIS] Directions error:', error);
+    console.error('[OASIS] Directions error:', error);
     return NextResponse.json({ error: 'Routing failed' }, { status: 500 });
   }
 }
