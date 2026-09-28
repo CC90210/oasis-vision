@@ -4,15 +4,19 @@
  * Changes from the original: no DOM lookups beyond the canvas it is given, no
  * WebSocket auto-detection, no HUD (the React view owns every label), sized to
  * its container rather than the window, a dispose() that releases the WebGL
- * context, OASIS colours, and a per-source rendering policy:
+ * context, OASIS colours, two room layouts, and a per-source rendering policy:
  *
- *   sim   everything the RuView demo draws — the view labels it SIMULATION.
+ *   sim   everything the RuView demo draws, in RuView's 12 x 10 m room — the
+ *         view labels it SIMULATION.
  *   node  figures and the floor field only when the node's data supports them
  *         (CSI, or a node openly replaying simulation); never for a node that
- *         synthesised them from laptop RSSI.
- *   host  this computer's own link, drawn as a link: a beam from the access
- *         point to "this computer" whose brightness is the measured
- *         disturbance. No figure, no field — one RSSI number locates no one.
+ *         synthesised them from laptop RSSI. RuView's room, because node
+ *         positions are in its coordinates.
+ *   host  the operator's room (home-room.ts). This computer's WiFi link is
+ *         drawn as a link whose brightness is the measured disturbance: one
+ *         RSSI number locates no one, so the link alone never draws a person.
+ *         With the webcam on, the figure is the tracked body — real joints,
+ *         approximately placed — and it is the camera, not WiFi, that sees it.
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -22,14 +26,16 @@ import { PostProcessing } from './post-processing.js';
 import { FigurePool } from './figure-pool.js';
 import { PoseSystem } from './pose-system.js';
 import { ScenarioProps } from './scenario-props.js';
+import { applyCutaway, buildHomeRoom, disposeHomeRoom, DEFAULT_HOME_ROOM, type HomeRoom, type HomeRoomParts } from './home-room';
 import { personsMayBeDrawn } from '@/lib/wifi-sensing/frames';
+import { estimatePlacement, smoothPlacement, toRoomBody, type CameraRig, type Landmark, type Placement, type RoomBody } from '@/lib/wifi-sensing/body';
 import type { SensingFrame, SourceKind } from '@/lib/wifi-sensing/types';
 
 const C = {
   cyan: 0x00e5ff,
   gold: 0xd4af37,
   amber: 0xff9500,
-  red: 0xff3d3d,
+  green: 0x00e676,
   blueSignal: 0x2090ff,
   bgDeep: 0x06060c,
   gridMain: 0x5c4d24,
@@ -43,12 +49,16 @@ const SETTINGS = {
   exposure: 1.3, vignette: 0.25, grain: 0.01, chromatic: 0.0005,
   boneThick: 0.018, jointSize: 0.035, glow: 0.3, trail: 0.35,
   wireColor: '#00E5FF', jointColor: '#D4AF37', aura: 0.02,
-  field: 0.45, waves: 0.4, ambient: 0.7, reflect: 0.2,
+  field: 0.45, waves: 0.28, ambient: 0.7, reflect: 0.2,
   fov: 50, orbitSpeed: 0.15, cycle: 30,
 };
 
-const ROUTER_POS = new THREE.Vector3(-4, 0.92, -3);
-const COMPUTER_POS = new THREE.Vector3(2.6, 0.74, 2.0);
+/** RuView's room: where the demo scenarios and node positions live. */
+const RUVIEW_ROUTER = new THREE.Vector3(-4, 0.92, -3);
+/** A body not re-seen for this long is taken as gone (bridges single dropped frames). */
+const BODY_HOLD_MS = 600;
+
+type Layout = 'ruview' | 'home';
 
 /** What the HUD is told about each rendered moment (throttled to ~10 Hz). */
 export interface SceneTick {
@@ -58,6 +68,15 @@ export interface SceneTick {
   autoCycle: boolean;
   paused: boolean;
   fps: number;
+  /** Webcam body, when one is being drawn: where it stands relative to the camera. */
+  body: Placement | null;
+}
+
+/** One webcam frame's pose, as the tracker hands it over. */
+export interface PoseInput {
+  image: Landmark[];
+  world: Landmark[];
+  aspect: number;
 }
 
 type AnyFrame = Record<string, any> | null; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -82,6 +101,7 @@ export class WifiObservatoryScene {
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   private mode: SourceKind = 'host';
+  private layout: Layout = 'home';
   private external: SensingFrame | null = null;
   /** `external` with what may not be drawn removed; rebuilt only when it changes. */
   private drawable: AnyFrame = null;
@@ -96,8 +116,10 @@ export class WifiObservatoryScene {
   private fps = 60;
   private quality = 2;
 
-  private grid!: THREE.GridHelper;
-  private roomWire!: THREE.LineSegments;
+  private ruviewLayout!: THREE.Group;
+  private home!: HomeRoomParts;
+  private homeRoom: HomeRoom = DEFAULT_HOME_ROOM;
+  private routerGroup!: THREE.Group;
   private routerLed!: THREE.Mesh;
   private routerLight!: THREE.PointLight;
   private waves: Array<{ mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; phase: number }> = [];
@@ -110,17 +132,24 @@ export class WifiObservatoryScene {
   private fieldPoints!: THREE.Points;
   private fieldColors!: Float32Array;
   private fieldSizes!: Float32Array;
-  private hostGroup!: THREE.Group;
+  private hostLink!: THREE.Group;
   private beamMat!: THREE.MeshBasicMaterial;
   private beamGlow!: THREE.Mesh;
   private beamGlowMat!: THREE.MeshBasicMaterial;
-  private screenMat!: THREE.MeshStandardMaterial;
   private pulseRing!: THREE.Mesh;
   private pulseMat!: THREE.MeshBasicMaterial;
 
-  constructor(canvas: HTMLCanvasElement, container: HTMLElement, onTick: (t: SceneTick) => void) {
+  private cameraOn = false;
+  private hfovDeg = 78;
+  private placement: Placement | null = null;
+  private body: RoomBody | null = null;
+  private bodyAt = 0;
+  private bodyShown = false;
+
+  constructor(canvas: HTMLCanvasElement, container: HTMLElement, onTick: (t: SceneTick) => void, room: HomeRoom = DEFAULT_HOME_ROOM) {
     this.container = container;
     this.onTick = onTick;
+    this.homeRoom = room;
     const { w, h } = this.size();
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -138,17 +167,18 @@ export class WifiObservatoryScene {
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
-    this.controls.minDistance = 2;
+    this.controls.minDistance = 1.5;
     this.controls.maxDistance = 25;
     this.controls.maxPolarAngle = Math.PI * 0.88;
-    this.resetCamera();
 
     this.demo = new DemoDataGenerator();
     this.demo.setCycleDuration(this.settings.cycle);
 
     this.setupLighting();
     this.nebula = new NebulaBackground(this.scene);
-    this.buildRoom();
+    this.buildRuviewLayout();
+    this.home = buildHomeRoom(this.homeRoom, this.hfovDeg);
+    this.scene.add(this.home.group);
     this.buildRouter();
     this.figures = new FigurePool(this.scene, this.settings, new PoseSystem());
     this.props = new ScenarioProps(this.scene);
@@ -157,6 +187,8 @@ export class WifiObservatoryScene {
     this.buildWaves();
     this.buildField();
     this.buildHostLink();
+    this.applyLayout();
+    this.resetCamera();
 
     this.post = new PostProcessing(this.renderer, this.scene, this.camera);
     this.post._bloomPass.strength = this.settings.bloom;
@@ -180,6 +212,12 @@ export class WifiObservatoryScene {
     if (mode === this.mode) return;
     this.mode = mode;
     this.setFrame(null);
+    const layout: Layout = mode === 'host' ? 'home' : 'ruview';
+    if (layout !== this.layout) {
+      this.layout = layout;
+      this.applyLayout();
+      this.resetCamera();
+    }
   }
 
   /** The latest frame from the host or a node. Ignored in simulation mode. */
@@ -198,6 +236,48 @@ export class WifiObservatoryScene {
       signal_field: field ? frame.signal_field : undefined,
       classification: { ...frame.classification, presence: people ? frame.classification?.presence : false },
     };
+  }
+
+  /** Resize the operator's room (THIS COMPUTER mode). */
+  setHomeRoom(room: HomeRoom, force = false): void {
+    const cur = this.homeRoom;
+    if (!force && cur.width === room.width && cur.depth === room.depth && cur.height === room.height) return;
+    this.homeRoom = room;
+    disposeHomeRoom(this.home);
+    this.home = buildHomeRoom(room, this.hfovDeg);
+    this.scene.add(this.home.group);
+    this.buildHostLink();
+    this.placement = null;
+    this.applyLayout();
+    if (this.layout === 'home') this.resetCamera();
+  }
+
+  /** Webcam tracking on/off: shows its field of view and lights its LED. */
+  setCameraActive(on: boolean, hfovDeg = this.hfovDeg): void {
+    this.cameraOn = on;
+    if (hfovDeg !== this.hfovDeg) {
+      // The field-of-view wedge is part of the room geometry.
+      this.hfovDeg = hfovDeg;
+      this.setHomeRoom(this.homeRoom, true);
+    }
+    this.applyLayout();
+    if (!on) this.setPose(null);
+  }
+
+  /** A webcam pose (or null for "nobody in view"). Placed with the desk webcam's geometry. */
+  setPose(pose: PoseInput | null): void {
+    if (!pose) {
+      this.placement = null;
+      return;
+    }
+    const rig = this.webcamRig(pose.aspect);
+    const raw = estimatePlacement(pose.image, rig);
+    if (!raw) return;
+    this.placement = smoothPlacement(this.placement, raw);
+    const body = toRoomBody(pose.world, pose.image, this.placement, rig, this.home.bounds);
+    if (!body) return;
+    this.body = body;
+    this.bodyAt = performance.now();
   }
 
   setScenario(key: string): void {
@@ -223,8 +303,13 @@ export class WifiObservatoryScene {
   }
 
   resetCamera(): void {
-    this.camera.position.set(6, 5, 8);
-    this.controls.target.set(0, 1.2, 0);
+    if (this.layout === 'home' && this.home) {
+      this.camera.position.copy(this.home.viewFrom);
+      this.controls.target.copy(this.home.viewTarget);
+    } else {
+      this.camera.position.set(6, 5, 8);
+      this.controls.target.set(0, 1.2, 0);
+    }
     this.controls.update();
   }
 
@@ -249,10 +334,15 @@ export class WifiObservatoryScene {
     this.renderer.forceContextLoss();
   }
 
-  // ---- Construction (from RuView main.js) --------------------------------
+  // ---- Construction ------------------------------------------------------
 
   private size(): { w: number; h: number } {
     return { w: Math.max(1, this.container.clientWidth), h: Math.max(1, this.container.clientHeight) };
+  }
+
+  private webcamRig(aspect: number): CameraRig {
+    const p = this.home.webcam.position;
+    return { position: [p.x, p.y, p.z], forward: this.home.webcam.forward, hfovDeg: this.hfovDeg, aspect };
   }
 
   private setupLighting(): void {
@@ -275,46 +365,44 @@ export class WifiObservatoryScene {
     const rim = new THREE.DirectionalLight(0x6699cc, 0.5);
     rim.position.set(0, 6, -5);
     this.scene.add(rim);
-    const overhead = new THREE.PointLight(0x8899aa, 1.0, 20, 1.0);
-    overhead.position.set(0, 3.8, 0);
-    this.scene.add(overhead);
   }
 
-  private buildRoom(): void {
-    this.grid = new THREE.GridHelper(12, 24, C.gridMain, C.gridSub);
-    (this.grid.material as THREE.Material).opacity = 0.5;
-    (this.grid.material as THREE.Material).transparent = true;
-    this.scene.add(this.grid);
-
-    const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(12, 4, 10));
-    this.roomWire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: C.roomEdge, opacity: 0.3, transparent: true }));
-    this.roomWire.position.y = 2;
-    this.scene.add(this.roomWire);
-
-    const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x0e0d0a,
-      roughness: 1.0 - this.settings.reflect * 0.7,
-      metalness: this.settings.reflect * 0.5,
-      emissive: 0x040302,
-      emissiveIntensity: 0.08,
-    });
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(12, 10), floorMat);
+  /** RuView's 12 x 10 m room: grid, outline, reflective floor, router table. */
+  private buildRuviewLayout(): void {
+    const g = new THREE.Group();
+    const grid = new THREE.GridHelper(12, 24, C.gridMain, C.gridSub);
+    (grid.material as THREE.Material).opacity = 0.5;
+    (grid.material as THREE.Material).transparent = true;
+    g.add(grid);
+    const roomWire = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(12, 4, 10)),
+      new THREE.LineBasicMaterial({ color: C.roomEdge, opacity: 0.3, transparent: true }),
+    );
+    roomWire.position.y = 2;
+    g.add(roomWire);
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(12, 10),
+      new THREE.MeshStandardMaterial({
+        color: 0x0e0d0a, roughness: 1.0 - this.settings.reflect * 0.7, metalness: this.settings.reflect * 0.5,
+        emissive: 0x040302, emissiveIntensity: 0.08,
+      }),
+    );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
-    this.scene.add(floor);
-
+    g.add(floor);
     const table = new THREE.Mesh(
       new THREE.BoxGeometry(0.8, 0.6, 0.5),
       new THREE.MeshStandardMaterial({ color: 0x6b5840, roughness: 0.55, emissive: 0x1a1408, emissiveIntensity: 0.25 }),
     );
-    table.position.set(ROUTER_POS.x, 0.3, ROUTER_POS.z);
+    table.position.set(RUVIEW_ROUTER.x, 0.3, RUVIEW_ROUTER.z);
     table.castShadow = true;
-    this.scene.add(table);
+    g.add(table);
+    this.ruviewLayout = g;
+    this.scene.add(g);
   }
 
   private buildRouter(): void {
     const g = new THREE.Group();
-    g.position.copy(ROUTER_POS);
     g.add(new THREE.Mesh(
       new THREE.BoxGeometry(0.6, 0.12, 0.35),
       new THREE.MeshStandardMaterial({ color: 0x505060, roughness: 0.2, metalness: 0.7, emissive: 0x101018, emissiveIntensity: 0.2 }),
@@ -334,6 +422,7 @@ export class WifiObservatoryScene {
     this.routerLight = new THREE.PointLight(C.blueSignal, 1.2, 8);
     this.routerLight.position.set(0, 0.3, 0);
     g.add(this.routerLight);
+    this.routerGroup = g;
     this.scene.add(g);
   }
 
@@ -344,11 +433,24 @@ export class WifiObservatoryScene {
         blending: THREE.AdditiveBlending, depthWrite: false, wireframe: true,
       });
       const shell = new THREE.Mesh(new THREE.SphereGeometry(0.8 + i, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.6), mat);
-      shell.position.copy(ROUTER_POS);
-      shell.position.y += 0.5;
       this.scene.add(shell);
       this.waves.push({ mesh: shell, mat, phase: i * 0.7 });
     }
+  }
+
+  /** Show one room, move the router (and its waves) into it. */
+  private applyLayout(): void {
+    const home = this.layout === 'home';
+    this.ruviewLayout.visible = !home;
+    this.home.group.visible = home;
+    this.home.frustum.visible = home && this.cameraOn;
+    this.home.webcamLedMat.color.setHex(this.cameraOn ? C.green : 0x1a3a1a);
+    this.routerGroup.position.copy(home ? this.home.routerPos : RUVIEW_ROUTER);
+    for (const w of this.waves) {
+      w.mesh.position.copy(this.routerGroup.position);
+      w.mesh.position.y += 0.5;
+    }
+    this.hostLink.visible = home && this.mode === 'host';
   }
 
   private buildMist(): void {
@@ -444,29 +546,19 @@ export class WifiObservatoryScene {
     this.scene.add(this.fieldPoints);
   }
 
-  /** "This computer" and the link to the access point — host mode only. */
+  /** The WiFi link from the router to this computer, for THIS COMPUTER mode. */
   private buildHostLink(): void {
+    if (this.hostLink) {
+      this.hostLink.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        mesh.geometry?.dispose?.();
+        (mesh.material as THREE.Material | undefined)?.dispose?.();
+      });
+      this.hostLink.removeFromParent();
+    }
     const g = new THREE.Group();
-    const desk = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 0.72, 0.7),
-      new THREE.MeshStandardMaterial({ color: 0x3a3226, roughness: 0.6, emissive: 0x0c0a06, emissiveIntensity: 0.3 }),
-    );
-    desk.position.set(COMPUTER_POS.x, 0.36, COMPUTER_POS.z);
-    desk.castShadow = true;
-    g.add(desk);
-
-    const metal = new THREE.MeshStandardMaterial({ color: 0x9a9aa2, roughness: 0.25, metalness: 0.8 });
-    const base = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.02, 0.28), metal);
-    base.position.set(COMPUTER_POS.x, COMPUTER_POS.y + 0.01, COMPUTER_POS.z);
-    g.add(base);
-    this.screenMat = new THREE.MeshStandardMaterial({ color: 0x0a1418, emissive: C.cyan, emissiveIntensity: 0.25, roughness: 0.2 });
-    const screen = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.26, 0.012), this.screenMat);
-    screen.position.set(COMPUTER_POS.x, COMPUTER_POS.y + 0.14, COMPUTER_POS.z - 0.14);
-    screen.rotation.x = -0.25;
-    g.add(screen);
-
-    const from = ROUTER_POS.clone().add(new THREE.Vector3(0, 0.4, 0));
-    const to = COMPUTER_POS.clone().add(new THREE.Vector3(0, 0.2, -0.1));
+    const from = this.home.routerPos.clone().add(new THREE.Vector3(0, 0.4, 0));
+    const to = this.home.computerPoint.clone();
     const len = from.distanceTo(to);
     const mid = from.clone().lerp(to, 0.5);
     const orient = (m: THREE.Mesh) => {
@@ -474,26 +566,22 @@ export class WifiObservatoryScene {
       m.lookAt(to);
       m.rotateX(Math.PI / 2);
     };
-
     this.beamMat = new THREE.MeshBasicMaterial({ color: C.cyan, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false });
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, len, 8, 1, true), this.beamMat);
     orient(beam);
     g.add(beam);
-
     this.beamGlowMat = new THREE.MeshBasicMaterial({ color: C.cyan, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
     this.beamGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, len, 12, 1, true), this.beamGlowMat);
     orient(this.beamGlow);
     g.add(this.beamGlow);
-
     this.pulseMat = new THREE.MeshBasicMaterial({ color: C.cyan, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
     this.pulseRing = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.4, 48), this.pulseMat);
     this.pulseRing.rotation.x = -Math.PI / 2;
-    this.pulseRing.position.set(COMPUTER_POS.x, 0.03, COMPUTER_POS.z);
+    this.pulseRing.position.copy(this.home.deskFloor);
     g.add(this.pulseRing);
-
-    g.visible = false;
-    this.hostGroup = g;
+    this.hostLink = g;
     this.scene.add(g);
+    this.hostLink.visible = this.layout === 'home' && this.mode === 'host';
   }
 
   // ---- Frame loop --------------------------------------------------------
@@ -508,22 +596,36 @@ export class WifiObservatoryScene {
     if (this.mode === 'sim') data = this.demo.update(dt);
     else data = this.drawable;
 
+    // A webcam body, if one is fresh, is the figure in THIS COMPUTER mode.
+    const body = this.mode === 'host' && this.cameraOn && this.body && performance.now() - this.bodyAt < BODY_HOLD_MS ? this.body : null;
+    if (body) {
+      this.drawBody(body, elapsed);
+      // No mist or trail around a tracked body: RuView's particle "body mass"
+      // is a stand-in for a pose it does not have, and here it buried the real
+      // arms and legs under a glowing capsule.
+      data = null;
+    } else {
+      if (this.bodyShown) this.hideBody();
+      this.figures.update(data, elapsed);
+    }
+
     this.nebula.update(dt, elapsed);
-    this.figures.update(data, elapsed);
     this.props.update(data, this.mode === 'sim' ? this.demo.currentScenario : null);
     this.updateMist(data, elapsed);
     this.updateTrail(data, dt);
     this.updateWaves(elapsed);
-    this.updateField(data);
+    this.updateField(this.mode === 'host' ? null : data);
     this.updateHostLink(elapsed);
+    if (this.layout === 'home') applyCutaway(this.home, this.camera.position);
 
     (this.routerLed.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * Math.sin(elapsed * 8);
     this.routerLight.intensity = 0.3 + 0.2 * Math.sin(elapsed * 3);
 
     if (this.autopilot) {
       this.autoAngle += dt * this.settings.orbitSpeed;
-      this.camera.position.set(Math.sin(this.autoAngle) * 10, 4.5 + Math.sin(this.autoAngle * 0.5), Math.cos(this.autoAngle) * 10);
-      this.controls.target.set(0, 1.2, 0);
+      const r = this.layout === 'home' ? Math.max(this.homeRoom.width, this.homeRoom.depth) * 1.3 : 10;
+      this.camera.position.set(Math.sin(this.autoAngle) * r, (this.layout === 'home' ? 3.2 : 4.5) + Math.sin(this.autoAngle * 0.5), Math.cos(this.autoAngle) * r);
+      this.controls.target.set(0, 1.0, 0);
     }
     this.controls.update();
     this.post.update(elapsed);
@@ -538,8 +640,39 @@ export class WifiObservatoryScene {
         autoCycle: !!this.demo._autoMode,
         paused: !!this.demo.paused,
         fps: this.fps,
+        body: body ? this.placement : null,
       });
     }
+  }
+
+  /** The tracked body drives figure 0 directly — its joints, not a procedural pose. */
+  private drawBody(body: RoomBody, elapsed: number): void {
+    const figs = this.figures.figures;
+    const fig = figs[0];
+    this.figures.applyKeypoints(fig, body.keypoints, 0, body.anchor, elapsed, 'standing');
+    // A measured body gets a solid translucent volume, so the limbs read; the
+    // engine's defaults are tuned for faint procedural avatars.
+    for (const seg of fig.bodySegments) {
+      seg.mat.opacity = seg.isHead ? 0.45 : 0.32;
+      seg.mat.emissiveIntensity = 0.25;
+    }
+    for (const b of fig.bones) b.mesh.material.opacity = 0.95;
+    fig.auraMat.opacity = 0.015;
+    fig.visible = true;
+    for (let i = 1; i < figs.length; i++) {
+      if (figs[i].visible) {
+        this.figures.hide(figs[i]);
+        figs[i].visible = false;
+      }
+    }
+    this.bodyShown = true;
+  }
+
+  private hideBody(): void {
+    const fig = this.figures.figures[0];
+    this.figures.hide(fig);
+    fig.visible = false;
+    this.bodyShown = false;
   }
 
   private updateMist(data: AnyFrame, elapsed: number): void {
@@ -607,10 +740,16 @@ export class WifiObservatoryScene {
   }
 
   private updateWaves(elapsed: number): void {
+    // In the operator's room the rings stay inside it; in RuView's room they
+    // keep RuView's reach. Either way they are decoration: "the router
+    // transmits", not a measurement.
+    const home = this.layout === 'home';
+    const reach = home ? 0.42 : 1;
+    const bright = home ? 0.5 : 1;
     for (const w of this.waves) {
       const life = ((elapsed * 0.8 + w.phase) % 4.5) / 4.5;
-      w.mat.opacity = Math.max(0, this.settings.waves * 0.25 * (1 - life));
-      const s = 1 + life * 0.6;
+      w.mat.opacity = Math.max(0, this.settings.waves * 0.25 * bright * (1 - life));
+      const s = (1 + life * 0.6) * reach;
       w.mesh.scale.set(s, s, s);
       w.mesh.rotation.y = elapsed * 0.05;
     }
@@ -648,8 +787,8 @@ export class WifiObservatoryScene {
   }
 
   private updateHostLink(elapsed: number): void {
-    const show = this.mode === 'host';
-    this.hostGroup.visible = show;
+    const show = this.layout === 'home' && this.mode === 'host';
+    this.hostLink.visible = show;
     if (!show) return;
     const m = this.external?.motion;
     const live = !!m && m.level !== 'calibrating';
@@ -667,7 +806,7 @@ export class WifiObservatoryScene {
     const ringLife = (elapsed * (0.6 + idx * 1.6)) % 1;
     this.pulseRing.scale.setScalar(1 + ringLife * (1.5 + idx * 3));
     this.pulseMat.opacity = live && idx > 0.2 ? (1 - ringLife) * 0.5 * idx : 0;
-    this.screenMat.emissiveIntensity = this.external ? 0.35 : 0.08;
+    this.home.screenMat.emissiveIntensity = this.external ? 0.35 : 0.08;
   }
 
   private updateFps(dt: number): void {

@@ -18,18 +18,23 @@
  * own — a dead sensor reads as a dead sensor.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, Cpu, Laptop, Minus, Pause, Play, Radio, RotateCcw, Settings2, SkipForward, X } from 'lucide-react';
+import { AlertTriangle, Camera, Check, Cpu, Laptop, Minus, Pause, Play, Radio, RotateCcw, Settings2, SkipForward, X } from 'lucide-react';
 import ViewSwitcher from '@/components/ViewSwitcher';
 import { applySettings, loadSavedSettings } from '@/lib/style-tokens';
 import { hostFrame } from '@/lib/wifi-sensing/frames';
 import { DEFAULT_NODE_URL, toSensingSocketUrl } from '@/lib/wifi-sensing/node-url';
+import { DEFAULT_HOME_ROOM, DEFAULT_WEBCAM_HFOV, sanitizeFov, sanitizeRoom, type HomeRoom } from '@/lib/wifi-sensing/room';
 import type { HostSnapshot, SensingFrame, SourceKind } from '@/lib/wifi-sensing/types';
 import type { SceneTick, WifiObservatoryScene } from './engine/scene';
+import type { CameraBodyTracker, CameraStatus, PoseFrame, TrackerStats } from './camera-tracker';
 import { RuviewNodeClient, type NodeStatus } from './node-client';
 
 const KEY_SOURCE = 'oasis-wifi-source';
 const KEY_NODE_URL = 'oasis-wifi-node-url';
 const KEY_NODE_TOKEN = 'oasis-wifi-node-token';
+const KEY_CAMERA = 'oasis-wifi-camera';
+const KEY_ROOM = 'oasis-wifi-room';
+const KEY_FOV = 'oasis-wifi-camera-fov';
 /** A node that has gone this long without a frame is shown as stale, not live. */
 const NODE_STALE_MS = 5_000;
 
@@ -105,6 +110,22 @@ export default function OasisWifi() {
   const [draftToken, setDraftToken] = useState('');
   const [scenario, setScenario] = useState('auto');
 
+  // Webcam body tracking (THIS COMPUTER mode only).
+  const [cameraOn, setCameraOn] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState<CameraStatus>('off');
+  const [cameraDetail, setCameraDetail] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(true);
+  const [cameraStats, setCameraStats] = useState<TrackerStats | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
+  const connections = useRef<Array<{ start: number; end: number }>>([]);
+
+  // The operator's room and webcam lens, as drawn and as used for placement.
+  const [room, setRoom] = useState<HomeRoom>(DEFAULT_HOME_ROOM);
+  const roomRef = useRef<HomeRoom>(DEFAULT_HOME_ROOM);
+  const [hfov, setHfov] = useState(DEFAULT_WEBCAM_HFOV);
+  const [draftRoom, setDraftRoom] = useState({ width: String(DEFAULT_HOME_ROOM.width), depth: String(DEFAULT_HOME_ROOM.depth), fov: String(DEFAULT_WEBCAM_HFOV) });
+
   // RSSI trace for the sparkline when the source is not the host (the host
   // snapshot carries its own history).
   const trace = useRef<number[]>([]);
@@ -128,6 +149,20 @@ export default function OasisWifi() {
       setNodeToken(t);
       setDraftToken(t);
     }
+    let savedRoom: HomeRoom = DEFAULT_HOME_ROOM;
+    try {
+      savedRoom = sanitizeRoom(JSON.parse(readStore(KEY_ROOM) ?? 'null'));
+    } catch {
+      /* unreadable: keep the default */
+    }
+    const savedFov = sanitizeFov(Number(readStore(KEY_FOV) ?? DEFAULT_WEBCAM_HFOV));
+    roomRef.current = savedRoom;
+    setRoom(savedRoom);
+    setHfov(savedFov);
+    setDraftRoom({ width: String(savedRoom.width), depth: String(savedRoom.depth), fov: String(savedFov) });
+    // The camera comes back on only if the operator left it on; the browser
+    // remembers the permission, so this does not prompt again.
+    if (readStore(KEY_CAMERA) === '1') setCameraOn(true);
     setRestored(true);
   }, []);
 
@@ -150,7 +185,7 @@ export default function OasisWifi() {
       .then(({ WifiObservatoryScene }) => {
         if (cancelled || !canvasRef.current || !containerRef.current) return;
         try {
-          scene = new WifiObservatoryScene(canvasRef.current, containerRef.current, onTick);
+          scene = new WifiObservatoryScene(canvasRef.current, containerRef.current, onTick, roomRef.current);
         } catch (e) {
           setSceneError(`3D view unavailable: ${(e as Error).message}. The readings below still work.`);
           return;
@@ -189,6 +224,102 @@ export default function OasisWifi() {
   useEffect(() => {
     sceneRef.current?.setMode(source);
   }, [source, ready]);
+
+  useEffect(() => {
+    if (ready) sceneRef.current?.setHomeRoom(room);
+  }, [room, ready]);
+
+  const cameraActive = restored && source === 'host' && cameraOn;
+  useEffect(() => {
+    sceneRef.current?.setCameraActive(cameraActive, hfov);
+  }, [cameraActive, hfov, ready]);
+
+  // ---- WEBCAM BODY TRACKING ----------------------------------------------
+  const drawSkeleton = useCallback((pose: PoseFrame | null) => {
+    const c = overlayRef.current;
+    const ctx = c?.getContext('2d');
+    if (!c || !ctx) return;
+    const w = c.clientWidth, h = c.clientHeight;
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+    ctx.clearRect(0, 0, w, h);
+    if (!pose) return;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#00E5FF';
+    ctx.fillStyle = '#D4AF37';
+    for (const { start, end } of connections.current) {
+      const a = pose.image[start], b = pose.image[end];
+      if (!a || !b || (a.visibility ?? 1) < 0.5 || (b.visibility ?? 1) < 0.5) continue;
+      ctx.beginPath();
+      ctx.moveTo(a.x * w, a.y * h);
+      ctx.lineTo(b.x * w, b.y * h);
+      ctx.stroke();
+    }
+    for (const p of pose.image) {
+      if ((p.visibility ?? 1) < 0.5) continue;
+      ctx.beginPath();
+      ctx.arc(p.x * w, p.y * h, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!cameraActive) return;
+    const video = videoRef.current;
+    if (!video) return;
+    let tracker: CameraBodyTracker | null = null;
+    let cancelled = false;
+    import('./camera-tracker')
+      .then(({ CameraBodyTracker, POSE_CONNECTIONS }) => {
+        if (cancelled) return;
+        connections.current = POSE_CONNECTIONS;
+        tracker = new CameraBodyTracker(video, {
+          onStatus: (s, d) => {
+            setCameraStatus(s);
+            setCameraDetail(d);
+          },
+          onPose: (pose) => {
+            // Straight to the scene and the preview: 15 updates a second would
+            // be wasted re-rendering the whole view.
+            sceneRef.current?.setPose(pose);
+            drawSkeleton(pose);
+          },
+          onStats: setCameraStats,
+        });
+        void tracker.start();
+      })
+      .catch((e) => {
+        setCameraStatus('error');
+        setCameraDetail(`Camera tracking failed to load: ${(e as Error).message}`);
+      });
+    return () => {
+      cancelled = true;
+      tracker?.stop();
+      sceneRef.current?.setPose(null);
+      drawSkeleton(null);
+      setCameraStatus('off');
+      setCameraDetail(null);
+      setCameraStats(null);
+    };
+  }, [cameraActive, drawSkeleton]);
+
+  const toggleCamera = () => {
+    const next = !cameraOn;
+    setCameraOn(next);
+    writeStore(KEY_CAMERA, next ? '1' : null);
+  };
+
+  const applyRoom = () => {
+    const next = sanitizeRoom({ width: Number(draftRoom.width), depth: Number(draftRoom.depth), height: room.height });
+    const fov = sanitizeFov(Number(draftRoom.fov));
+    setDraftRoom({ width: String(next.width), depth: String(next.depth), fov: String(fov) });
+    setRoom(next);
+    setHfov(fov);
+    writeStore(KEY_ROOM, JSON.stringify(next));
+    writeStore(KEY_FOV, String(fov));
+  };
 
   // ---- THIS COMPUTER -----------------------------------------------------
   useEffect(() => {
@@ -327,6 +458,10 @@ export default function OasisWifi() {
       if (hostUnreachable) return { label: 'OFFLINE', tone: 'dead', note: hostUnreachable };
       if (!host || host.status === 'starting') return { label: 'STARTING', tone: 'warn', note: 'Opening this computer’s WiFi adapter…' };
       if (host.status !== 'live' || !host.latest) return { label: 'NO SIGNAL', tone: 'dead', note: host.error?.message ?? 'No reading from the WiFi adapter.' };
+      const wifiNote = `WiFi: ${host.method ?? 'the adapter'} at ${host.rateHz} Hz.`;
+      if (cameraOn && cameraStatus === 'tracking') {
+        return { label: 'LIVE · COMPUTER + CAMERA', tone: 'live', note: `${wifiNote} Your figure comes from the webcam.` };
+      }
       return { label: 'LIVE · THIS COMPUTER', tone: 'live', note: `Reading ${host.method ?? 'the adapter'} at ${host.rateHz} Hz.` };
     }
     if (nodeStatus !== 'live') {
@@ -347,14 +482,22 @@ export default function OasisWifi() {
       default:
         return { label: 'LIVE · NODE', tone: 'warn', note: `Unrecognised node source "${nodeFrame.source}" — treating its figures as unverified.` };
     }
-  }, [source, host, hostUnreachable, nodeStatus, nodeDetail, nodeFrame, nodeAgeMs]);
+  }, [source, host, hostUnreachable, nodeStatus, nodeDetail, nodeFrame, nodeAgeMs, cameraOn, cameraStatus]);
 
   const capabilities = useMemo((): Array<[string, boolean]> => {
+    if (source === 'host' && cameraOn) {
+      return [
+        ['Your body & position — camera', true],
+        ['Motion along the WiFi link', true],
+        ['Through walls (camera needs sight)', false],
+        ['Heart / breathing', false],
+      ];
+    }
     if (source === 'host') {
       return [
         ['Motion along this computer’s WiFi link', true],
         ['A person sitting still', false],
-        ['Who or where', false],
+        ['Who or where — turn CAMERA on', false],
         ['Heart / breathing', false],
       ];
     }
@@ -372,7 +515,7 @@ export default function OasisWifi() {
       ];
     }
     return [['Demonstration only — no measurement', false]];
-  }, [source, nodeFrame]);
+  }, [source, nodeFrame, cameraOn]);
 
   const sparkValues = source === 'host' ? (host?.history ?? []).map((h) => h.rssiDbm) : trace.current;
 
@@ -423,11 +566,26 @@ export default function OasisWifi() {
               <SourceButton on={source === 'node'} onClick={() => chooseSource('node')} icon={Cpu} label="SENSOR NODE" title="A RuView sensing server with ESP32 CSI hardware" />
               <SourceButton on={source === 'sim'} onClick={() => chooseSource('sim')} icon={Play} label="SIMULATION" title="RuView’s scripted demo scenarios — not measured" />
             </div>
+            {source === 'host' && (
+              <button
+                onClick={toggleCamera}
+                aria-pressed={cameraOn}
+                title={cameraOn ? 'Turn webcam body tracking off' : 'Track your body with this computer’s webcam — the video stays on this computer'}
+                className={`flex items-center gap-1.5 px-2.5 py-[7px] rounded-xl border text-[9px] font-mono font-bold tracking-[0.16em] backdrop-blur-2xl transition-colors ${
+                  cameraOn
+                    ? 'text-[var(--alert-green)] border-[var(--alert-green)]/50 bg-[var(--alert-green)]/10'
+                    : 'text-[var(--text-secondary)] border-[var(--border-primary)] bg-[var(--bg-panel)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                <Camera className="w-3.5 h-3.5" />
+                CAMERA
+              </button>
+            )}
             <button
               onClick={() => setShowSettings((v) => !v)}
               className={`w-8 h-8 rounded-full flex items-center justify-center border border-[var(--border-primary)] bg-[var(--bg-panel)] backdrop-blur-2xl transition-colors ${showSettings ? 'text-[var(--gold-light)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
-              title="Sensor node settings"
-              aria-label="Sensor node settings"
+              title="Room, camera and sensor node settings"
+              aria-label="Settings"
               aria-expanded={showSettings}
             >
               <Settings2 className="w-4 h-4" />
@@ -474,13 +632,41 @@ export default function OasisWifi() {
 
       {/* ── SETTINGS ── */}
       {showSettings && (
-        <div className="absolute z-30 right-4 md:right-6 top-40 w-[min(92vw,360px)] glass-panel p-4 pointer-events-auto">
+        <div className="absolute z-30 right-4 md:right-6 top-40 w-[min(92vw,360px)] max-h-[calc(100vh-11rem)] overflow-y-auto styled-scrollbar glass-panel p-4 pointer-events-auto">
           <div className="flex items-center justify-between mb-3">
-            <span className="hud-text text-[10px] text-[var(--gold-primary)]">Sensor node</span>
+            <span className="hud-text text-[10px] text-[var(--gold-primary)]">Your room</span>
             <button onClick={() => setShowSettings(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]" aria-label="Close settings">
               <X className="w-4 h-4" />
             </button>
           </div>
+          <p className="text-[10px] leading-relaxed text-[var(--text-secondary)] mb-3">
+            THIS COMPUTER draws your room at this size, with the desk and webcam against the back wall. Measure it roughly; the webcam places you by how large you appear, so a wrong lens angle shifts you nearer or farther.
+          </p>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {([
+              ['width', 'Width (m)'],
+              ['depth', 'Depth (m)'],
+              ['fov', 'Lens (°)'],
+            ] as const).map(([k, label]) => (
+              <label key={k} className="block">
+                <span className="block hud-label mb-1">{label}</span>
+                <input
+                  inputMode="decimal"
+                  value={draftRoom[k]}
+                  onChange={(e) => setDraftRoom((d) => ({ ...d, [k]: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && applyRoom()}
+                  className="w-full bg-black/40 border border-[var(--border-primary)] rounded-md px-2 py-1.5 text-[11px] font-mono text-[var(--text-primary)] outline-none focus:border-[var(--border-active)]"
+                />
+              </label>
+            ))}
+          </div>
+          <button
+            onClick={applyRoom}
+            className="w-full mb-5 px-3 py-2 rounded-md bg-[var(--gold-primary)]/15 hover:bg-[var(--gold-primary)]/25 border border-[var(--gold-primary)]/40 hud-text text-[10px] text-[var(--gold-primary)] transition-colors"
+          >
+            Apply room
+          </button>
+          <div className="hud-text text-[10px] text-[var(--gold-primary)] mb-2">Sensor node</div>
           <p className="text-[10px] leading-relaxed text-[var(--text-secondary)] mb-3">
             For presence, breathing and person positions, OASIS WIFI reads a RuView sensing server fed by ESP32-S3 boards (about $9 each) that capture Channel State Information. Run the server, then point this at it.
           </p>
@@ -515,6 +701,46 @@ export default function OasisWifi() {
             The token is kept in this browser only. Sensing engine adapted from RuView{' '}
             <a href="/licenses/ruview-LICENSE.txt" target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-[var(--text-secondary)]">(MIT © rUv)</a>.
           </p>
+        </div>
+      )}
+
+      {/* ── CAMERA PREVIEW ── */}
+      {cameraActive && (
+        <div className="absolute left-3 md:left-6 bottom-24 z-20 w-[min(60vw,260px)] glass-panel p-2 pointer-events-auto">
+          <div className="flex items-center justify-between mb-1.5 px-0.5">
+            <span className="hud-text text-[9px] flex items-center gap-1.5" style={{ color: cameraStatus === 'tracking' ? 'var(--alert-green)' : cameraStatus === 'error' ? 'var(--alert-red)' : 'var(--alert-orange)' }}>
+              <Camera className="w-3 h-3" />
+              {cameraStatus === 'tracking' ? 'Camera · tracking you' : cameraStatus === 'no-person' ? 'Camera · nobody in view' : cameraStatus === 'error' ? 'Camera · unavailable' : 'Camera · starting'}
+            </span>
+            <button onClick={() => setShowPreview((v) => !v)} className="text-[9px] font-mono tracking-wider text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+              {showPreview ? 'HIDE' : 'SHOW'}
+            </button>
+          </div>
+          {/* The video stays mounted while hidden: the tracker reads its frames. */}
+          <div className={`relative rounded-md overflow-hidden bg-black ${showPreview ? 'aspect-video' : 'h-px opacity-0'}`} style={{ transform: 'scaleX(-1)' }}>
+            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" muted playsInline />
+            <canvas ref={overlayRef} className="absolute inset-0 w-full h-full" />
+          </div>
+          <p className="mt-1.5 px-0.5 text-[9px] leading-relaxed text-[var(--text-muted)]">
+            {cameraStatus === 'error'
+              ? cameraDetail
+              : tick?.body
+                ? // The camera's right is your left when you face it; say it from your side.
+                  `About ${tick.body.distance.toFixed(1)} m from the camera${Math.abs(tick.body.lateral) > 0.3 ? `, ${Math.abs(tick.body.lateral).toFixed(1)} m to your ${tick.body.lateral > 0 ? 'left' : 'right'}` : ''}. Position is approximate; the pose is tracked.`
+                : cameraDetail ?? 'One person, within about 4 m, head in view. Video never leaves this computer.'}
+          </p>
+          {cameraStats && cameraStatus !== 'error' && (
+            <p
+              className="px-0.5 text-[9px] font-mono tabular-nums"
+              style={{ color: cameraStats.where === 'main' ? 'var(--alert-orange)' : 'var(--text-muted)' }}
+              title={cameraStats.where === 'main'
+                ? 'Tracking fell back to the page’s own thread, which slows the 3D view.'
+                : 'Tracking runs in a background thread; the 3D view keeps its own.'}
+            >
+              {cameraStats.rate} updates/s · {cameraStats.ms} ms each{cameraStats.delegate ? ` · ${cameraStats.delegate}` : ''}
+              {cameraStats.where === 'main' ? ' · slow path' : ''}
+            </p>
+          )}
         </div>
       )}
 

@@ -119,10 +119,13 @@ src/app/api/osint/         RECON toolkit routes
 src/app/wifi/              OASIS WIFI view (docs/OASIS-WIFI.md)
 src/app/api/wifi-sensing/  this computer's WiFi link: RSSI + motion verdict
 src/lib/wifi-sensing/      sampler, netsh/CoreWLAN/proc parsers, motion
-                           detector, frame provenance rules (frames.ts)
+                           detector, frame provenance rules (frames.ts),
+                           webcam body placement (body.ts), room (room.ts)
 src/components/
    ViewSwitcher.tsx        WORLD VIEW / OASIS WIFI bar
-   oasis-wifi/             WiFi view + RuView-derived Three.js engine (MIT)
+   oasis-wifi/             WiFi view + RuView-derived Three.js engine (MIT);
+                           camera-tracker.ts + pose.worker.ts = MediaPipe
+                           webcam tracking, off the main thread
    OasisMap.tsx           the MapLibre globe
    CameraViewer.tsx        full camera modal
    CctvPreviews.tsx        camera tiles on the map

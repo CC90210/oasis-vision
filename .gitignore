@@ -67,3 +67,6 @@ launcher/*.ico
 
 # RECON audit trail. Hashed, but still a record of who was investigated.
 runs/recon-audit.jsonl
+
+# MediaPipe runtime, copied from node_modules by launcher/copy-vendor-assets.js
+/public/mediapipe/wasm/

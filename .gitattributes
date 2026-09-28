@@ -25,3 +25,7 @@ launcher/*.sh   text eol=lf
 *.icns          binary
 *.svg           text
 *.pbf           binary
+
+# Model weights are binary; never let line-ending conversion touch them.
+*.task          binary
+*.wasm          binary

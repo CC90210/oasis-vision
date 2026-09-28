@@ -45,7 +45,7 @@ Measured against the running application, not estimated.
 | **Conflict** | Active zones, GDACS events, frontlines | ✅ |
 | **News** | 25+ 24/7 broadcast streams, GDELT | ✅ |
 | **RECON** | 27 modules — email→identity, DNS, WHOIS, certs, IP intel, breach exposure, OFAC sanctions, image forensics, chain forensics | ✅ |
-| **OASIS WIFI** | A second view (top bar): movement sensed from this computer's own WiFi link, live; presence and breathing with ESP32 CSI sensor nodes. See [docs/OASIS-WIFI.md](docs/OASIS-WIFI.md) | ✅ |
+| **OASIS WIFI** | A second view (top bar): movement sensed from this computer's own WiFi link, live; your body tracked by the webcam and placed in a 3D room; presence and breathing with ESP32 CSI sensor nodes. See [docs/OASIS-WIFI.md](docs/OASIS-WIFI.md) | ✅ |
 
 **~50 of 69 API routes are live and keyless.** Optional keys raise rate limits; none are needed
 to run.
@@ -147,7 +147,9 @@ Basemaps © CARTO and OpenFreeMap, © OpenStreetMap contributors. Satellite imag
 
 OASIS WIFI's 3D observatory and simulation scenarios are adapted from
 [RuView](https://github.com/ruvnet/RuView) (MIT, © rUv); the licence ships with the app at
-`public/licenses/ruview-LICENSE.txt`.
+`public/licenses/ruview-LICENSE.txt`. Webcam body tracking uses Google
+[MediaPipe](https://github.com/google-ai-edge/mediapipe) (`@mediapipe/tasks-vision` and the
+BlazePose GHUM 3D pose model, Apache-2.0).
 
 <div align="center">
 

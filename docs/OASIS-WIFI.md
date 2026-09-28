@@ -17,6 +17,32 @@ rebranded and rebuilt around sources that each say exactly what they measured.
 (RSSI) per reading, which is enough to notice movement near the link and not enough for
 anything more. RuView's own README states the same limit.
 
+## CAMERA: your body in the room (THIS COMPUTER mode)
+
+The **CAMERA** button next to the source switch tracks the operator's body with this computer's
+webcam, and the figure in the room copies it: arms, legs and walking. It is labelled CAMERA
+everywhere, because the camera sees the body, not WiFi. The WiFi motion reading carries on
+beside it.
+
+- **Engine:** Google MediaPipe pose landmarker (`pose_landmarker_lite.task`, BlazePose GHUM 3D,
+  Apache-2.0 per its model card), served by this app from `public/mediapipe/`. The ~11 MB
+  runtime is copied from `node_modules` at build time (`launcher/copy-vendor-assets.js`,
+  gitignored). The 5.8 MB model is committed so builds work offline.
+- **Privacy:** frames go from the camera to the model and are dropped. Nothing is recorded,
+  stored or sent.
+- **Limits (from the model card):** one person, within about 4 m, head in view. Depth is an
+  estimate from how tall the torso appears, so the preview says "approximate". It cannot see
+  through walls, and it stops seeing you when you leave the camera's view.
+- **Placement:** the webcam is assumed to sit on the desk against the back wall, looking into
+  the room. Set the room's width and depth and the lens angle under the gear. A wrong lens angle
+  moves you nearer or farther.
+- **Performance** (Ryzen 5 5600GT, integrated Radeon, under background load): inference runs in
+  a Web Worker (`pose.worker.ts`). On the main thread it took 68 ms a pose and dragged the 3D
+  view from 30 to 13 fps; in the worker the view holds 27 fps. The worker times GPU against CPU
+  on the first frames and keeps the faster (CPU here: ~110-150 ms, about 6 updates a second). The
+  preview shows the live rate. If a worker cannot start, tracking falls back to the main thread
+  and the preview says "slow path".
+
 The view never switches to the simulation by itself. If the adapter or the node stops
 answering, the panels say so.
 
@@ -82,10 +108,15 @@ The node's own `source` field decides how its data is labelled
 src/app/wifi/page.tsx                 the route
 src/components/ViewSwitcher.tsx       WORLD VIEW / OASIS WIFI bar (both views)
 src/components/oasis-wifi/
-  OasisWifi.tsx                       HUD, source switch, node settings, labels
+  OasisWifi.tsx                       HUD, source switch, camera preview, room/node settings
   node-client.ts                      RuView /ws/sensing client (tickets, backoff)
+  camera-tracker.ts                   webcam + pose worker lifecycle, errors, stats
+  pose.worker.ts                      MediaPipe pose inference off the main thread
   engine/scene.ts                     Three.js scene, adapted from RuView main.js
+  engine/home-room.ts                 the operator's room (walls, door, desk, webcam view)
   engine/*.js                         RuView modules, vendored unmodified (MIT header)
+src/lib/wifi-sensing/body.ts          webcam pose -> body placed in the room (tested)
+src/lib/wifi-sensing/room.ts          room/lens settings, validated
 src/app/api/wifi-sensing/route.ts     GET this computer's link state
 src/lib/wifi-sensing/                 sampler, parsers, motion detector, frame rules, tests
 public/licenses/ruview-LICENSE.txt    RuView's MIT licence, shipped with the app

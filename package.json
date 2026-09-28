@@ -10,7 +10,9 @@
     "url": "https://github.com/CC90210/oasis-vision.git"
   },
   "scripts": {
+    "predev": "node launcher/copy-vendor-assets.js",
     "dev": "next dev",
+    "prebuild": "node launcher/copy-vendor-assets.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -20,6 +22,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@mediapipe/tasks-vision": "1.0.1",
     "@vercel/analytics": "^2.0.1",
     "framer-motion": "^12.38.0",
     "google-libphonenumber": "^3.2.44",
