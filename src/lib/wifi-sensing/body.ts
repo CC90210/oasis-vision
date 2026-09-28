@@ -32,6 +32,12 @@ const L_SHOULDER = 11, R_SHOULDER = 12, L_HIP = 23, R_HIP = 24, L_ANKLE = 27, R_
 
 /** Adult shoulder-midpoint to hip-midpoint distance, metres. */
 export const TORSO_M = 0.5;
+/**
+ * Farthest a body is placed. The model card puts people beyond about 4 m out
+ * of scope; the half metre allows for the estimate's own error. Beyond it the
+ * body is not drawn at all, rather than drawn somewhere the model cannot vouch for.
+ */
+export const MAX_RANGE_M = 4.5;
 /** Ankle joint height above the floor, metres. */
 const ANKLE_HEIGHT_M = 0.08;
 /** Hip height used when both ankles are out of frame. */
@@ -69,9 +75,14 @@ function mid(a: Landmark, b: Landmark): { x: number; y: number } {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-/** Where the person stands relative to the camera, or null if untrackable. */
-export function estimatePlacement(image: Landmark[], rig: CameraRig): Placement | null {
-  if (!isTrackable(image)) return null;
+export type PlacementResult =
+  | { ok: true; placement: Placement }
+  /** `partial`: shoulders or hips not clearly in view. `too-far`: beyond MAX_RANGE_M. */
+  | { ok: false; reason: 'partial' | 'too-far' };
+
+/** Where the person stands relative to the camera — or why they cannot be placed. */
+export function placeBody(image: Landmark[], rig: CameraRig): PlacementResult {
+  if (!isTrackable(image)) return { ok: false, reason: 'partial' };
   const aspect = rig.aspect > 0 ? rig.aspect : 16 / 9;
   const hfov = (Math.min(Math.max(rig.hfovDeg, 30), 150) * Math.PI) / 180;
   // Focal length in units of frame HEIGHT, so vertical and horizontal distances share a unit.
@@ -80,11 +91,13 @@ export function estimatePlacement(image: Landmark[], rig: CameraRig): Placement 
   const shoulders = mid(image[L_SHOULDER], image[R_SHOULDER]);
   const hips = mid(image[L_HIP], image[R_HIP]);
   const torso = Math.hypot((shoulders.x - hips.x) * aspect, shoulders.y - hips.y);
-  if (!(torso > 0.01)) return null;
 
-  const distance = Math.min(Math.max((f * TORSO_M) / torso, 0.4), 8);
+  const raw = (f * TORSO_M) / torso;
+  // Also catches a torso of zero height, where raw is Infinity or NaN.
+  if (!(raw <= MAX_RANGE_M)) return { ok: false, reason: 'too-far' };
+  const distance = Math.max(raw, 0.4);
   const lateral = (distance * (hips.x - 0.5) * aspect) / f;
-  return { lateral, distance };
+  return { ok: true, placement: { lateral, distance } };
 }
 
 function basis(rig: CameraRig): { F: Vec3; R: Vec3 } {

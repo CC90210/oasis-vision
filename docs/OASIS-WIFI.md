@@ -33,6 +33,13 @@ beside it.
 - **Limits (from the model card):** one person, within about 4 m, head in view. Depth is an
   estimate from how tall the torso appears, so the preview says "approximate". It cannot see
   through walls, and it stops seeing you when you leave the camera's view.
+- **When it will not draw you:** the camera must see both shoulders and both hips. Sitting at
+  the desk usually hides the hips, so step back. A body estimated past 4.5 m (`MAX_RANGE_M`,
+  the model card's 4 m plus the estimate's slack) is not drawn at all. In both cases the preview
+  says "can't place you" and why, rather than "tracking you" over an empty room.
+- **Failures stay visible:** if tracking dies mid-session (worker crash, model error), the
+  preview shows the reason until CAMERA is turned off and on. If camera frames keep failing to
+  reach the worker, tracking moves to the main thread and the preview says "slow path".
 - **Placement:** the webcam is assumed to sit on the desk against the back wall, looking into
   the room. Set the room's width and depth and the lens angle under the gear. A wrong lens angle
   moves you nearer or farther.

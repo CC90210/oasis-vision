@@ -233,6 +233,8 @@ export default function OasisWifi() {
   useEffect(() => {
     sceneRef.current?.setCameraActive(cameraActive, hfov);
   }, [cameraActive, hfov, ready]);
+  // The camera sees someone the room cannot place: say why, not "tracking you" over an empty room.
+  const placeIssue = cameraStatus === 'tracking' && tick && !tick.body ? tick.bodyIssue : null;
 
   // ---- WEBCAM BODY TRACKING ----------------------------------------------
   const drawSkeleton = useCallback((pose: PoseFrame | null) => {
@@ -708,9 +710,9 @@ export default function OasisWifi() {
       {cameraActive && (
         <div className="absolute left-3 md:left-6 bottom-24 z-20 w-[min(60vw,260px)] glass-panel p-2 pointer-events-auto">
           <div className="flex items-center justify-between mb-1.5 px-0.5">
-            <span className="hud-text text-[9px] flex items-center gap-1.5" style={{ color: cameraStatus === 'tracking' ? 'var(--alert-green)' : cameraStatus === 'error' ? 'var(--alert-red)' : 'var(--alert-orange)' }}>
+            <span className="hud-text text-[9px] flex items-center gap-1.5" style={{ color: cameraStatus === 'tracking' && !placeIssue ? 'var(--alert-green)' : cameraStatus === 'error' ? 'var(--alert-red)' : 'var(--alert-orange)' }}>
               <Camera className="w-3 h-3" />
-              {cameraStatus === 'tracking' ? 'Camera · tracking you' : cameraStatus === 'no-person' ? 'Camera · nobody in view' : cameraStatus === 'error' ? 'Camera · unavailable' : 'Camera · starting'}
+              {placeIssue ? 'Camera · can’t place you' : cameraStatus === 'tracking' ? 'Camera · tracking you' : cameraStatus === 'no-person' ? 'Camera · nobody in view' : cameraStatus === 'error' ? 'Camera · unavailable' : 'Camera · starting'}
             </span>
             <button onClick={() => setShowPreview((v) => !v)} className="text-[9px] font-mono tracking-wider text-[var(--text-muted)] hover:text-[var(--text-primary)]">
               {showPreview ? 'HIDE' : 'SHOW'}
@@ -727,7 +729,11 @@ export default function OasisWifi() {
               : tick?.body
                 ? // The camera's right is your left when you face it; say it from your side.
                   `About ${tick.body.distance.toFixed(1)} m from the camera${Math.abs(tick.body.lateral) > 0.3 ? `, ${Math.abs(tick.body.lateral).toFixed(1)} m to your ${tick.body.lateral > 0 ? 'left' : 'right'}` : ''}. Position is approximate; the pose is tracked.`
-                : cameraDetail ?? 'One person, within about 4 m, head in view. Video never leaves this computer.'}
+                : placeIssue === 'too-far'
+                  ? 'You are past about 4 m, too far for the camera to place you. Come closer.'
+                  : placeIssue === 'partial'
+                    ? 'The camera needs both shoulders and both hips in view to place you. Step back from it.'
+                    : cameraDetail ?? 'One person, within about 4 m, head in view. Video never leaves this computer.'}
           </p>
           {cameraStats && cameraStatus !== 'error' && (
             <p

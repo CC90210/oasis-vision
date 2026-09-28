@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COCO_FROM_BLAZEPOSE, estimatePlacement, isTrackable, smoothPlacement, toRoomBody, type CameraRig, type Landmark } from './body';
+import { COCO_FROM_BLAZEPOSE, MAX_RANGE_M, isTrackable, placeBody, smoothPlacement, toRoomBody, type CameraRig, type Landmark, type Placement } from './body';
 
 /** 33 landmarks, all hidden, then the ones a test cares about set. */
 function blank(): Landmark[] {
@@ -70,9 +70,16 @@ describe('isTrackable', () => {
   });
 });
 
-describe('estimatePlacement', () => {
+/** The placement of a body the test expects to be placed. */
+function placed(image: Landmark[]): Placement {
+  const r = placeBody(image, RIG);
+  if (!r.ok) throw new Error(`not placed: ${r.reason}`);
+  return r.placement;
+}
+
+describe('placeBody', () => {
   it('reads distance from how tall the torso appears', () => {
-    const p = estimatePlacement(imageOf(0.5, 0.2), RIG)!;
+    const p = placed(imageOf(0.5, 0.2));
     expect(p.distance).toBeCloseTo((F * 0.5) / 0.2, 5);
     expect(p.distance).toBeGreaterThan(2.5);
     expect(p.distance).toBeLessThan(3);
@@ -80,22 +87,35 @@ describe('estimatePlacement', () => {
   });
 
   it('puts a bigger torso closer', () => {
-    const far = estimatePlacement(imageOf(0.5, 0.12), RIG)!;
-    const near = estimatePlacement(imageOf(0.5, 0.3), RIG)!;
+    const far = placed(imageOf(0.5, 0.15));
+    const near = placed(imageOf(0.5, 0.3));
     expect(near.distance).toBeLessThan(far.distance);
   });
 
   it('reads direction from where the hips sit across the frame', () => {
-    const p = estimatePlacement(imageOf(0.75, 0.2), RIG)!;
+    const p = placed(imageOf(0.75, 0.2));
     expect(p.lateral).toBeCloseTo((p.distance * 0.25 * (16 / 9)) / F, 6);
     expect(p.lateral).toBeGreaterThan(0.9);
-    expect(estimatePlacement(imageOf(0.25, 0.2), RIG)!.lateral).toBeCloseTo(-p.lateral, 6);
+    expect(placed(imageOf(0.25, 0.2)).lateral).toBeCloseTo(-p.lateral, 6);
   });
 
-  it('refuses a body it cannot see', () => {
+  it('refuses a body whose shoulders or hips it cannot see', () => {
     const lm = imageOf();
     lm[23] = { ...lm[23], visibility: 0 };
-    expect(estimatePlacement(lm, RIG)).toBeNull();
+    expect(placeBody(lm, RIG)).toEqual({ ok: false, reason: 'partial' });
+  });
+
+  it("refuses a body past the model's range rather than drawing it there", () => {
+    // With this lens a torso 0.12 of the frame tall is about 4.6 m away.
+    expect(placeBody(imageOf(0.5, 0.12), RIG)).toEqual({ ok: false, reason: 'too-far' });
+    const edge = placed(imageOf(0.5, (F * 0.5) / (MAX_RANGE_M - 0.05)));
+    expect(edge.distance).toBeCloseTo(MAX_RANGE_M - 0.05, 5);
+  });
+
+  it('refuses a torso of zero height instead of placing it at infinity', () => {
+    const lm = imageOf();
+    for (const i of [11, 12]) lm[i] = { ...lm[i], y: lm[23].y };
+    expect(placeBody(lm, RIG)).toEqual({ ok: false, reason: 'too-far' });
   });
 });
 

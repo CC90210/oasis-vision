@@ -50,6 +50,8 @@ const MODEL = '/mediapipe/pose_landmarker_lite.task';
 const MIN_INTERVAL_MS = 66;
 /** A worker that has not loaded the model by now is treated as unavailable. */
 const WORKER_READY_MS = 30_000;
+/** Frames in a row that may fail to reach the worker before tracking moves to the main thread. */
+const CAPTURE_FAILURES_MAX = 5;
 
 export const POSE_CONNECTIONS = PoseLandmarker.POSE_CONNECTIONS;
 
@@ -80,6 +82,7 @@ export class CameraBodyTracker {
   private statsRuns = 0;
   private statsMs = 0;
   private delegate: 'GPU' | 'CPU' | null = null;
+  private captureFailures = 0;
 
   constructor(
     private readonly video: HTMLVideoElement,
@@ -120,15 +123,7 @@ export class CameraBodyTracker {
     this.events.onStatus('starting', 'Loading the body-tracking model…');
     if (!(await this.startWorker())) {
       console.warn('[oasis-wifi] pose worker unavailable; tracking on the main thread');
-      try {
-        const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
-        this.landmarker = await this.create(fileset, 'GPU')
-          .then((l) => ((this.delegate = 'GPU'), l))
-          .catch(() => this.create(fileset, 'CPU').then((l) => ((this.delegate = 'CPU'), l)));
-      } catch (e) {
-        this.events.onStatus('error', `The body-tracking model failed to load: ${(e as Error).message}`);
-        return this.release();
-      }
+      if (!(await this.loadOnMainThread())) return;
     }
     if (this.stopped) return this.release();
     this.events.onStatus('no-person', 'Step into the camera’s view.');
@@ -157,10 +152,7 @@ export class CameraBodyTracker {
           this.delegate = e.data.delegate ?? null;
           this.worker = w;
           w.onmessage = this.onWorkerMessage;
-          w.onerror = () => {
-            this.events.onStatus('error', 'Body tracking stopped: its worker crashed.');
-            this.stop();
-          };
+          w.onerror = () => this.fail('Body tracking stopped: its worker crashed.');
           resolve(true);
         } else if (e.data?.type === 'error') {
           console.warn('[oasis-wifi] pose worker failed to start:', e.data.message);
@@ -185,10 +177,37 @@ export class CameraBodyTracker {
       this.delegate = msg.delegate ?? this.delegate;
       this.report(msg.image && msg.world ? { image: msg.image, world: msg.world, aspect: msg.aspect } : null, msg.ms, 'worker');
     } else if (msg?.type === 'error') {
-      this.events.onStatus('error', `Body tracking stopped: ${msg.message}`);
-      this.stop();
+      this.fail(`Body tracking stopped: ${msg.message}`);
     }
   };
+
+  /** Track on the page's own thread instead of a worker: slower, and the stats say so. */
+  private async loadOnMainThread(): Promise<boolean> {
+    try {
+      const fileset = await FilesetResolver.forVisionTasks(WASM_BASE);
+      this.landmarker = await this.create(fileset, 'GPU')
+        .then((l) => ((this.delegate = 'GPU'), l))
+        .catch(() => this.create(fileset, 'CPU').then((l) => ((this.delegate = 'CPU'), l)));
+    } catch (e) {
+      this.fail(`The body-tracking model failed to load: ${(e as Error).message}`);
+      return false;
+    }
+    if (this.stopped) {
+      this.release();
+      return false;
+    }
+    return true;
+  }
+
+  /** Frames keep failing to reach the worker: carry on without it. */
+  private async abandonWorker(reason: unknown): Promise<void> {
+    if (!this.worker) return;
+    console.warn('[oasis-wifi] camera frames cannot reach the pose worker; tracking on the main thread:', reason);
+    this.worker.terminate();
+    this.worker = null;
+    this.busy = false;
+    await this.loadOnMainThread();
+  }
 
   private create(fileset: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>, delegate: 'GPU' | 'CPU') {
     return PoseLandmarker.createFromOptions(fileset, {
@@ -219,14 +238,19 @@ export class CameraBodyTracker {
       const h = Math.max(120, Math.round(this.video.videoHeight / 2));
       createImageBitmap(this.video, { resizeWidth: w, resizeHeight: h, resizeQuality: 'low' })
         .then((bitmap) => {
+          this.captureFailures = 0;
           if (this.stopped || !this.worker) {
             bitmap.close();
+            this.busy = false;
             return;
           }
           this.worker.postMessage({ type: 'frame', bitmap, ts: now }, [bitmap]);
         })
-        .catch(() => {
+        .catch((e) => {
           this.busy = false;
+          // One bad frame (the camera changing mode) is let go; a run of them is not.
+          if (++this.captureFailures === 1) console.warn('[oasis-wifi] could not capture a camera frame:', e);
+          if (this.captureFailures >= CAPTURE_FAILURES_MAX) void this.abandonWorker(e);
         });
       return;
     }
@@ -236,8 +260,7 @@ export class CameraBodyTracker {
     try {
       result = this.landmarker.detectForVideo(this.video, now);
     } catch (e) {
-      this.events.onStatus('error', `Body tracking stopped: ${(e as Error).message}`);
-      this.stop();
+      this.fail(`Body tracking stopped: ${(e as Error).message}`);
       return;
     }
     const aspect = this.video.videoWidth / Math.max(1, this.video.videoHeight);
@@ -278,6 +301,16 @@ export class CameraBodyTracker {
     cancelAnimationFrame(this.raf);
     this.release();
     this.events.onStatus('off', null);
+  }
+
+  /** Stop on a failure, keeping its reason on screen (stop() would replace it with 'off'). */
+  private fail(detail: string): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    cancelAnimationFrame(this.raf);
+    this.release();
+    this.events.onPose(null);
+    this.events.onStatus('error', `${detail} Turn CAMERA off and on to try again.`);
   }
 
   private release(): void {

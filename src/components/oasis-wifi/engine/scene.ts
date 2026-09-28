@@ -28,7 +28,7 @@ import { PoseSystem } from './pose-system.js';
 import { ScenarioProps } from './scenario-props.js';
 import { applyCutaway, buildHomeRoom, disposeHomeRoom, DEFAULT_HOME_ROOM, type HomeRoom, type HomeRoomParts } from './home-room';
 import { personsMayBeDrawn } from '@/lib/wifi-sensing/frames';
-import { estimatePlacement, smoothPlacement, toRoomBody, type CameraRig, type Landmark, type Placement, type RoomBody } from '@/lib/wifi-sensing/body';
+import { placeBody, smoothPlacement, toRoomBody, type CameraRig, type Landmark, type Placement, type PlacementResult, type RoomBody } from '@/lib/wifi-sensing/body';
 import type { SensingFrame, SourceKind } from '@/lib/wifi-sensing/types';
 
 const C = {
@@ -70,7 +70,11 @@ export interface SceneTick {
   fps: number;
   /** Webcam body, when one is being drawn: where it stands relative to the camera. */
   body: Placement | null;
+  /** Why a person the camera sees is not drawn: shoulders or hips hidden, or out of range. */
+  bodyIssue: BodyIssue | null;
 }
+
+export type BodyIssue = Extract<PlacementResult, { ok: false }>['reason'];
 
 /** One webcam frame's pose, as the tracker hands it over. */
 export interface PoseInput {
@@ -143,6 +147,7 @@ export class WifiObservatoryScene {
   private hfovDeg = 78;
   private placement: Placement | null = null;
   private body: RoomBody | null = null;
+  private bodyIssue: BodyIssue | null = null;
   private bodyAt = 0;
   private bodyShown = false;
 
@@ -268,12 +273,19 @@ export class WifiObservatoryScene {
   setPose(pose: PoseInput | null): void {
     if (!pose) {
       this.placement = null;
+      this.bodyIssue = null;
       return;
     }
     const rig = this.webcamRig(pose.aspect);
-    const raw = estimatePlacement(pose.image, rig);
-    if (!raw) return;
-    this.placement = smoothPlacement(this.placement, raw);
+    const placed = placeBody(pose.image, rig);
+    if (!placed.ok) {
+      this.bodyIssue = placed.reason;
+      return;
+    }
+    this.bodyIssue = null;
+    // A body that has been gone a while starts where it is, not sliding in from where it was.
+    const gone = performance.now() - this.bodyAt > BODY_HOLD_MS;
+    this.placement = smoothPlacement(gone ? null : this.placement, placed.placement);
     const body = toRoomBody(pose.world, pose.image, this.placement, rig, this.home.bounds);
     if (!body) return;
     this.body = body;
@@ -641,6 +653,7 @@ export class WifiObservatoryScene {
         paused: !!this.demo.paused,
         fps: this.fps,
         body: body ? this.placement : null,
+        bodyIssue: body ? null : this.bodyIssue,
       });
     }
   }
