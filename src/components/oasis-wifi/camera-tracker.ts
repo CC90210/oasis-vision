@@ -139,13 +139,14 @@ export class CameraBodyTracker {
       return Promise.resolve(false);
     }
     return new Promise((resolve) => {
-      const fail = () => {
+      // Not this.fail(): a worker that never starts is replaced by the main thread, not an error.
+      const unavailable = () => {
         clearTimeout(timer);
         w.terminate();
         resolve(false);
       };
-      const timer = setTimeout(fail, WORKER_READY_MS);
-      w.onerror = fail;
+      const timer = setTimeout(unavailable, WORKER_READY_MS);
+      w.onerror = unavailable;
       w.onmessage = (e: MessageEvent) => {
         if (e.data?.type === 'ready') {
           clearTimeout(timer);
@@ -156,7 +157,7 @@ export class CameraBodyTracker {
           resolve(true);
         } else if (e.data?.type === 'error') {
           console.warn('[oasis-wifi] pose worker failed to start:', e.data.message);
-          fail();
+          unavailable();
         }
       };
       w.postMessage({ type: 'init', wasmBase: location.origin + WASM_BASE, model: location.origin + MODEL });
@@ -238,18 +239,24 @@ export class CameraBodyTracker {
       const h = Math.max(120, Math.round(this.video.videoHeight / 2));
       createImageBitmap(this.video, { resizeWidth: w, resizeHeight: h, resizeQuality: 'low' })
         .then((bitmap) => {
-          this.captureFailures = 0;
           if (this.stopped || !this.worker) {
             bitmap.close();
             this.busy = false;
             return;
           }
-          this.worker.postMessage({ type: 'frame', bitmap, ts: now }, [bitmap]);
+          try {
+            this.worker.postMessage({ type: 'frame', bitmap, ts: now }, [bitmap]);
+          } catch (e) {
+            // Not transferred, so still ours to free.
+            bitmap.close();
+            throw e;
+          }
+          this.captureFailures = 0;
         })
         .catch((e) => {
           this.busy = false;
           // One bad frame (the camera changing mode) is let go; a run of them is not.
-          if (++this.captureFailures === 1) console.warn('[oasis-wifi] could not capture a camera frame:', e);
+          if (++this.captureFailures === 1) console.warn('[oasis-wifi] could not hand a camera frame to the worker:', e);
           if (this.captureFailures >= CAPTURE_FAILURES_MAX) void this.abandonWorker(e);
         });
       return;

@@ -16,6 +16,8 @@ import { CameraBodyTracker, type CameraStatus } from './camera-tracker';
 
 class FakeWorker {
   static last: FakeWorker | null = null;
+  /** Throw on every frame, as postMessage does when a bitmap cannot be transferred. */
+  static refuseFrames = false;
   onmessage: ((e: MessageEvent) => void) | null = null;
   onerror: ((e: unknown) => void) | null = null;
   terminated = false;
@@ -24,6 +26,7 @@ class FakeWorker {
   }
   postMessage(msg: { type: string }) {
     if (msg.type === 'init') queueMicrotask(() => this.onmessage?.({ data: { type: 'ready', delegate: 'CPU' } } as MessageEvent));
+    if (msg.type === 'frame' && FakeWorker.refuseFrames) throw new Error('DataCloneError: could not be transferred');
   }
   terminate() {
     this.terminated = true;
@@ -69,6 +72,7 @@ beforeEach(() => {
   clock = 1000;
   frames = [];
   FakeWorker.last = null;
+  FakeWorker.refuseFrames = false;
   detectForVideo.mockClear();
   track.stop.mockClear();
   vi.spyOn(performance, 'now').mockImplementation(() => clock);
@@ -124,7 +128,7 @@ describe('CameraBodyTracker', () => {
     for (let i = 0; i < 3; i++) await nextFrame();
     // Four bad frames in a row: still the worker's.
     expect(FakeWorker.last!.terminated).toBe(false);
-    expect(console.warn).toHaveBeenCalledWith('[oasis-wifi] could not capture a camera frame:', expect.any(Error));
+    expect(console.warn).toHaveBeenCalledWith('[oasis-wifi] could not hand a camera frame to the worker:', expect.any(Error));
 
     await nextFrame(); // the fifth
     await settle();
@@ -133,6 +137,27 @@ describe('CameraBodyTracker', () => {
     await nextFrame();
     expect(detectForVideo).toHaveBeenCalled();
     expect(statuses.some(([s]) => s === 'error')).toBe(false);
+  });
+
+  it('counts a frame the worker refuses, and frees it', async () => {
+    FakeWorker.refuseFrames = true;
+    const bitmaps: Array<{ close: ReturnType<typeof vi.fn> }> = [];
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => {
+      const b = { close: vi.fn() };
+      bitmaps.push(b);
+      return b;
+    }));
+    const { t } = tracker();
+    await t.start();
+    await settle();
+    for (let i = 0; i < 4; i++) await nextFrame();
+    await settle();
+
+    expect(FakeWorker.last!.terminated).toBe(true);
+    expect(bitmaps).toHaveLength(5);
+    expect(bitmaps.every((b) => b.close.mock.calls.length === 1)).toBe(true);
+    await nextFrame();
+    expect(detectForVideo).toHaveBeenCalled();
   });
 
   it('lets a single bad frame go', async () => {
