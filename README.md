@@ -92,6 +92,7 @@ Node 20+ (developed on 24).
 | Phone / LAN | `launcher/oasis-vision.sh --lan` | `launcher\OASIS-VISION-mobile.cmd` |
 | Stop | `launcher/oasis-vision.sh --stop` | `launcher\stop.cmd` |
 | Rebuild | `launcher/rebuild.sh` | `launcher\rebuild.cmd` |
+| Update from GitHub (pull, rebuild, reopen) | `launcher/update.sh` | `launcher\update.cmd` |
 
 Serves on **port 3177**, bound to loopback. Port 3000 is avoided deliberately — it collides with
 common dev servers.

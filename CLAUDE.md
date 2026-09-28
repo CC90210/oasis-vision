@@ -42,6 +42,7 @@ Node 20+ required (24 is what it is developed on). macOS: `brew install node`.
 | Phone / LAN | `launcher/oasis-vision.sh --lan` | `launcher\OASIS-VISION-mobile.cmd` |
 | Stop | `launcher/oasis-vision.sh --stop` | `launcher\stop.cmd` |
 | Rebuild | `launcher/rebuild.sh` | `launcher\rebuild.cmd` |
+| Update from GitHub | `launcher/update.sh` | `launcher\update.cmd` |
 
 Serves on **port 3177**, bound to `127.0.0.1` by default. Port 3000 is avoided
 deliberately — it collides with common local dev servers.
