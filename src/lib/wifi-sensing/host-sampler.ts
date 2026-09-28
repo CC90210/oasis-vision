@@ -46,7 +46,9 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<string> {
     // windowsHide: the server runs from a hidden launcher; without it every
     // read would flash a console window on the desktop.
     execFile(cmd, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
-      if (err) reject(err);
+      // netsh explains a refusal (Location off, WLAN service stopped) on
+      // stdout and exits non-zero, so the output rides along with the error.
+      if (err) reject(Object.assign(err, { stdout: String(stdout ?? '') }));
       else resolve(String(stdout));
     });
   });
@@ -54,8 +56,11 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<string> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+export type CommandRunner = (cmd: string, args: string[], timeoutMs: number) => Promise<string>;
+
 export class HostWifiSampler {
   readonly platform: HostPlatform;
+  private readonly exec: CommandRunner;
   private generation = 0;
   private running = false;
   private status: HostSnapshot['status'];
@@ -69,8 +74,9 @@ export class HostWifiSampler {
   private child: ChildProcess | null = null;
   private watchdog: ReturnType<typeof setInterval> | null = null;
 
-  constructor(platform: HostPlatform = detectPlatform()) {
+  constructor(platform: HostPlatform = detectPlatform(), exec: CommandRunner = run) {
     this.platform = platform;
+    this.exec = exec;
     this.status = platform === 'unsupported' ? 'unsupported' : 'starting';
   }
 
@@ -164,14 +170,19 @@ export class HostWifiSampler {
     while (gen === this.generation) {
       const started = Date.now();
       try {
-        const parsed = parseNetshInterfaces(await run('netsh', ['wlan', 'show', 'interfaces'], 5_000));
+        const parsed = parseNetshInterfaces(await this.exec('netsh', ['wlan', 'show', 'interfaces'], 5_000));
         if (gen !== this.generation) return;
         const link = parsed.links.find((l) => l.rssiKind === 'dbm') ?? parsed.links[0];
         if (link) this.accept(link);
         else if (parsed.error) this.fail(parsed.error);
       } catch (e) {
         if (gen !== this.generation) return;
-        this.fail({ code: 'command-failed', message: `netsh failed: ${(e as Error).message}` });
+        const said = parseNetshInterfaces((e as { stdout?: string }).stdout ?? '').error;
+        if (said && said.code !== 'unparsed-output') this.fail(said);
+        else {
+          const text = ((e as { stdout?: string }).stdout ?? '').trim().split(/\r?\n/)[0];
+          this.fail({ code: 'command-failed', message: `netsh failed: ${text || (e as Error).message}` });
+        }
       }
       await sleep(Math.max(20, FAST_INTERVAL_MS - (Date.now() - started)));
     }
@@ -261,7 +272,7 @@ export class HostWifiSampler {
     while (gen === this.generation) {
       const started = Date.now();
       try {
-        const r = parseSystemProfiler(await run('system_profiler', ['SPAirPortDataType', '-json'], 20_000));
+        const r = parseSystemProfiler(await this.exec('system_profiler', ['SPAirPortDataType', '-json'], 20_000));
         if (gen !== this.generation) return;
         if (r.link) this.accept(r.link);
         else if (r.error) this.fail(r.error);

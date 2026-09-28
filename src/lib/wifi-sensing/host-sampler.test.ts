@@ -91,6 +91,35 @@ describe('HostWifiSampler bookkeeping', () => {
     expect(snap.error?.message).toMatch(/11 s/);
   });
 
+  it('passes on netsh\'s own explanation when it exits with an error', async () => {
+    const refusal = Object.assign(new Error('Command failed: netsh wlan show interfaces'), {
+      stdout: 'Network shell commands need location permission to access WLAN information.',
+    });
+    const s = new HostWifiSampler('windows', () => Promise.reject(refusal));
+    s.touch();
+    await vi.waitFor(() => expect(s.snapshot().error?.code).toBe('location-permission'));
+    s.stop();
+  });
+
+  it('names the reason netsh gave when it is not one it recognises', async () => {
+    const down = Object.assign(new Error('Command failed: netsh wlan show interfaces'), {
+      stdout: 'The Wireless AutoConfig Service (wlansvc) is not running.\r\n',
+    });
+    const s = new HostWifiSampler('windows', () => Promise.reject(down));
+    s.touch();
+    await vi.waitFor(() => expect(s.snapshot().error?.message).toBe('netsh failed: The Wireless AutoConfig Service (wlansvc) is not running.'));
+    s.stop();
+  });
+
+  it('reads through the injected runner when the command succeeds', async () => {
+    const out = '    Name : Wi-Fi\n    State : connected\n    SSID : Home\n    Channel : 6\n    Signal : 90%\n    Rssi : -52\n';
+    const s = new HostWifiSampler('windows', async () => out);
+    s.touch();
+    await vi.waitFor(() => expect(s.snapshot().latest?.rssiDbm).toBe(-52));
+    expect(s.snapshot().method).toBe('netsh wlan show interfaces');
+    s.stop();
+  });
+
   it('says so on a platform with no reader', () => {
     const s = new HostWifiSampler('unsupported');
     s.touch();
