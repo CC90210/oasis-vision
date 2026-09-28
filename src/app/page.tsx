@@ -24,6 +24,7 @@ import GlobalStatusBar from '@/components/GlobalStatusBar';
 import LiveAlerts from '@/components/LiveAlerts';
 import WorldRemote from '@/components/WorldRemote';
 import ArcGISPanel from '@/components/ArcGISPanel';
+import ViewSwitcher from '@/components/ViewSwitcher';
 const OasisMap = dynamic(() => import('@/components/OasisMap'), { ssr: false });
 const LayerPanel = dynamic(() => import('@/components/LayerPanel'));
 const SpaceCam = dynamic(() => import('@/components/SpaceCam'), { ssr: false });
@@ -331,9 +332,15 @@ export default function Dashboard() {
   const [liveFeedName, setLiveFeedName] = useState('');
   const [liveFeedEmbedAllowed, setLiveFeedEmbedAllowed] = useState(true);
 
-  // Splash screen
+  // Splash screen — once per session, so coming back from OASIS WIFI does not
+  // replay the 2.5 s boot sequence.
   useEffect(() => {
-    const splashTimer = setTimeout(() => setShowSplash(false), 2500);
+    let seen = false;
+    try {
+      seen = sessionStorage.getItem('oasis-splash-seen') === '1';
+      sessionStorage.setItem('oasis-splash-seen', '1');
+    } catch { /* storage blocked: show it every time, as before */ }
+    const splashTimer = setTimeout(() => setShowSplash(false), seen ? 0 : 2500);
     return () => clearTimeout(splashTimer);
   }, []);
 
@@ -1317,6 +1324,14 @@ export default function Dashboard() {
         </div>
       </motion.div>
 
+
+      {/* ── VIEW SWITCHER: World View ↔ OASIS WIFI ── */}
+      <div className="hidden md:block absolute top-4 left-1/2 -translate-x-1/2 z-[250]">
+        <ViewSwitcher active="world" compact />
+      </div>
+      <div className="md:hidden absolute top-3 right-3 z-[250]">
+        <ViewSwitcher active="world" compact />
+      </div>
 
       {/* ── TOP-RIGHT STATUS (desktop) ── */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 3 }} className="status-bar-desktop absolute top-4 right-6 z-[200] pointer-events-none flex items-center gap-3 text-[10px] font-mono tracking-widest text-[var(--text-muted)]">

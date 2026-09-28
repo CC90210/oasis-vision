@@ -73,6 +73,10 @@ centre of Canada, 15 hardcoded ports reported as an open-port scan. All were
 real and all shipped. `lib/camera-feed.ts:describeFeed` is the single place feed
 wording is decided — change it there, not at a call site.
 
+The same holds in OASIS WIFI: `lib/wifi-sensing/frames.ts` is where a
+source's claims are decided. A laptop's RSSI shows motion, never people or
+vitals, and simulated frames are badged SIMULATION on every panel.
+
 **A silent catch hides a dead source.** `catch { return [] }` makes a retired
 endpoint indistinguishable from a region with no cameras. Three sources were
 dead for months behind exactly that (WSDOT 404, Ville de Montréal 403, Ontario
@@ -111,7 +115,13 @@ src/app/api/osint/         RECON toolkit routes
    exif/ bin/              forensics, keyless
    wigle/ virustotal/      forensics, need an API key (Tier 2)
    darkweb/                onion crawl via opt-in sidecar (Tier 3)
+src/app/wifi/              OASIS WIFI view (docs/OASIS-WIFI.md)
+src/app/api/wifi-sensing/  this computer's WiFi link: RSSI + motion verdict
+src/lib/wifi-sensing/      sampler, netsh/CoreWLAN/proc parsers, motion
+                           detector, frame provenance rules (frames.ts)
 src/components/
+   ViewSwitcher.tsx        WORLD VIEW / OASIS WIFI bar
+   oasis-wifi/             WiFi view + RuView-derived Three.js engine (MIT)
    OasisMap.tsx           the MapLibre globe
    CameraViewer.tsx        full camera modal
    CctvPreviews.tsx        camera tiles on the map

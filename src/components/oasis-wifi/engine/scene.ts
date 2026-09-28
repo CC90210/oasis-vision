@@ -1,0 +1,723 @@
+/*! OASIS WIFI scene. Derived from RuView ui/observatory/js/main.js (commit
+ * 5ef001b4, MIT, Copyright (c) 2024 rUv — see ./LICENSE-RUVIEW).
+ *
+ * Changes from the original: no DOM lookups beyond the canvas it is given, no
+ * WebSocket auto-detection, no HUD (the React view owns every label), sized to
+ * its container rather than the window, a dispose() that releases the WebGL
+ * context, OASIS colours, and a per-source rendering policy:
+ *
+ *   sim   everything the RuView demo draws — the view labels it SIMULATION.
+ *   node  figures and the floor field only when the node's data supports them
+ *         (CSI, or a node openly replaying simulation); never for a node that
+ *         synthesised them from laptop RSSI.
+ *   host  this computer's own link, drawn as a link: a beam from the access
+ *         point to "this computer" whose brightness is the measured
+ *         disturbance. No figure, no field — one RSSI number locates no one.
+ */
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { DemoDataGenerator } from './demo-data.js';
+import { NebulaBackground } from './nebula-background.js';
+import { PostProcessing } from './post-processing.js';
+import { FigurePool } from './figure-pool.js';
+import { PoseSystem } from './pose-system.js';
+import { ScenarioProps } from './scenario-props.js';
+import { personsMayBeDrawn } from '@/lib/wifi-sensing/frames';
+import type { SensingFrame, SourceKind } from '@/lib/wifi-sensing/types';
+
+const C = {
+  cyan: 0x00e5ff,
+  gold: 0xd4af37,
+  amber: 0xff9500,
+  red: 0xff3d3d,
+  blueSignal: 0x2090ff,
+  bgDeep: 0x06060c,
+  gridMain: 0x5c4d24,
+  gridSub: 0x2a2412,
+  roomEdge: 0x8b7325,
+};
+
+/** RuView's "foundation" look, recoloured to the OASIS palette. */
+const SETTINGS = {
+  bloom: 0.08, bloomRadius: 0.2, bloomThresh: 0.6,
+  exposure: 1.3, vignette: 0.25, grain: 0.01, chromatic: 0.0005,
+  boneThick: 0.018, jointSize: 0.035, glow: 0.3, trail: 0.35,
+  wireColor: '#00E5FF', jointColor: '#D4AF37', aura: 0.02,
+  field: 0.45, waves: 0.4, ambient: 0.7, reflect: 0.2,
+  fov: 50, orbitSpeed: 0.15, cycle: 30,
+};
+
+const ROUTER_POS = new THREE.Vector3(-4, 0.92, -3);
+const COMPUTER_POS = new THREE.Vector3(2.6, 0.74, 2.0);
+
+/** What the HUD is told about each rendered moment (throttled to ~10 Hz). */
+export interface SceneTick {
+  frame: SensingFrame | null;
+  /** Simulation only: the scenario on screen and whether it is auto-cycling. */
+  scenario: string | null;
+  autoCycle: boolean;
+  paused: boolean;
+  fps: number;
+}
+
+type AnyFrame = Record<string, any> | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+export class WifiObservatoryScene {
+  private readonly container: HTMLElement;
+  private readonly renderer: THREE.WebGLRenderer;
+  private readonly scene = new THREE.Scene();
+  private readonly camera: THREE.PerspectiveCamera;
+  private readonly controls: OrbitControls;
+  private readonly clock = new THREE.Clock();
+  private readonly settings = { ...SETTINGS };
+  private readonly onTick: (t: SceneTick) => void;
+  private readonly resizeObserver: ResizeObserver;
+
+  /* eslint-disable @typescript-eslint/no-explicit-any -- vendored JS classes */
+  private readonly demo: any;
+  private readonly nebula: any;
+  private readonly post: any;
+  private readonly figures: any;
+  private readonly props: any;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  private mode: SourceKind = 'host';
+  private external: SensingFrame | null = null;
+  /** `external` with what may not be drawn removed; rebuilt only when it changes. */
+  private drawable: AnyFrame = null;
+
+  private raf = 0;
+  private disposed = false;
+  private autopilot = false;
+  private autoAngle = 0;
+  private lastTick = -1;
+  private fpsFrames = 0;
+  private fpsTime = 0;
+  private fps = 60;
+  private quality = 2;
+
+  private grid!: THREE.GridHelper;
+  private roomWire!: THREE.LineSegments;
+  private routerLed!: THREE.Mesh;
+  private routerLight!: THREE.PointLight;
+  private waves: Array<{ mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; phase: number }> = [];
+  private mist!: THREE.Points;
+  private mistCount = 800;
+  private trail!: THREE.Points;
+  private trailCount = 200;
+  private trailHead = 0;
+  private trailTimer = 0;
+  private fieldPoints!: THREE.Points;
+  private fieldColors!: Float32Array;
+  private fieldSizes!: Float32Array;
+  private hostGroup!: THREE.Group;
+  private beamMat!: THREE.MeshBasicMaterial;
+  private beamGlow!: THREE.Mesh;
+  private beamGlowMat!: THREE.MeshBasicMaterial;
+  private screenMat!: THREE.MeshStandardMaterial;
+  private pulseRing!: THREE.Mesh;
+  private pulseMat!: THREE.MeshBasicMaterial;
+
+  constructor(canvas: HTMLCanvasElement, container: HTMLElement, onTick: (t: SceneTick) => void) {
+    this.container = container;
+    this.onTick = onTick;
+    const { w, h } = this.size();
+
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(w, h, false);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = this.settings.exposure;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    this.scene.background = new THREE.Color(C.bgDeep);
+    this.scene.fog = new THREE.FogExp2(C.bgDeep, 0.005);
+
+    this.camera = new THREE.PerspectiveCamera(this.settings.fov, w / h, 0.1, 300);
+    this.controls = new OrbitControls(this.camera, canvas);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.minDistance = 2;
+    this.controls.maxDistance = 25;
+    this.controls.maxPolarAngle = Math.PI * 0.88;
+    this.resetCamera();
+
+    this.demo = new DemoDataGenerator();
+    this.demo.setCycleDuration(this.settings.cycle);
+
+    this.setupLighting();
+    this.nebula = new NebulaBackground(this.scene);
+    this.buildRoom();
+    this.buildRouter();
+    this.figures = new FigurePool(this.scene, this.settings, new PoseSystem());
+    this.props = new ScenarioProps(this.scene);
+    this.buildMist();
+    this.buildTrail();
+    this.buildWaves();
+    this.buildField();
+    this.buildHostLink();
+
+    this.post = new PostProcessing(this.renderer, this.scene, this.camera);
+    this.post._bloomPass.strength = this.settings.bloom;
+    this.post._bloomPass.radius = this.settings.bloomRadius;
+    this.post._bloomPass.threshold = this.settings.bloomThresh;
+    this.post._vignettePass.uniforms.uVignetteStrength.value = this.settings.vignette;
+    this.post._vignettePass.uniforms.uGrainStrength.value = this.settings.grain;
+    this.post._vignettePass.uniforms.uChromaticStrength.value = this.settings.chromatic;
+    this.post.resize(w, h);
+
+    this.resizeObserver = new ResizeObserver(() => this.onResize());
+    this.resizeObserver.observe(container);
+
+    this.animate = this.animate.bind(this);
+    this.raf = requestAnimationFrame(this.animate);
+  }
+
+  // ---- Public API --------------------------------------------------------
+
+  setMode(mode: SourceKind): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    this.setFrame(null);
+  }
+
+  /** The latest frame from the host or a node. Ignored in simulation mode. */
+  setFrame(frame: SensingFrame | null): void {
+    this.external = frame;
+    if (!frame) {
+      this.drawable = null;
+      return;
+    }
+    const people = personsMayBeDrawn(frame);
+    const field = frame.provenance === 'csi' || frame.provenance === 'simulated';
+    this.drawable = {
+      ...frame,
+      scenario: null,
+      persons: people ? frame.persons ?? [] : [],
+      signal_field: field ? frame.signal_field : undefined,
+      classification: { ...frame.classification, presence: people ? frame.classification?.presence : false },
+    };
+  }
+
+  setScenario(key: string): void {
+    this.demo.setScenario(key);
+  }
+
+  nextScenario(): void {
+    this.demo.cycleScenario();
+  }
+
+  setPaused(paused: boolean): void {
+    this.demo.paused = paused;
+  }
+
+  get paused(): boolean {
+    return !!this.demo.paused;
+  }
+
+  toggleAutopilot(): boolean {
+    this.autopilot = !this.autopilot;
+    this.controls.enabled = !this.autopilot;
+    return this.autopilot;
+  }
+
+  resetCamera(): void {
+    this.camera.position.set(6, 5, 8);
+    this.controls.target.set(0, 1.2, 0);
+    this.controls.update();
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    cancelAnimationFrame(this.raf);
+    this.resizeObserver.disconnect();
+    this.controls.dispose();
+    this.post.dispose();
+    this.nebula.dispose();
+    this.scene.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      mesh.geometry?.dispose?.();
+      const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+      else mat?.dispose?.();
+    });
+    this.renderer.dispose();
+    // Hand the GL context back now: browsers cap live contexts, and the map
+    // needs one when the operator switches back to WORLD VIEW.
+    this.renderer.forceContextLoss();
+  }
+
+  // ---- Construction (from RuView main.js) --------------------------------
+
+  private size(): { w: number; h: number } {
+    return { w: Math.max(1, this.container.clientWidth), h: Math.max(1, this.container.clientHeight) };
+  }
+
+  private setupLighting(): void {
+    this.scene.add(new THREE.AmbientLight(0xccccdd, this.settings.ambient * 5.0));
+    this.scene.add(new THREE.HemisphereLight(0x6688bb, 0x203040, 1.2));
+    const key = new THREE.DirectionalLight(0xffeedd, 1.2);
+    key.position.set(4, 8, 3);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.camera.near = 0.5;
+    key.shadow.camera.far = 20;
+    key.shadow.camera.left = -8;
+    key.shadow.camera.right = 8;
+    key.shadow.camera.top = 8;
+    key.shadow.camera.bottom = -8;
+    this.scene.add(key);
+    const fill = new THREE.DirectionalLight(0x8899bb, 0.7);
+    fill.position.set(-4, 5, -2);
+    this.scene.add(fill);
+    const rim = new THREE.DirectionalLight(0x6699cc, 0.5);
+    rim.position.set(0, 6, -5);
+    this.scene.add(rim);
+    const overhead = new THREE.PointLight(0x8899aa, 1.0, 20, 1.0);
+    overhead.position.set(0, 3.8, 0);
+    this.scene.add(overhead);
+  }
+
+  private buildRoom(): void {
+    this.grid = new THREE.GridHelper(12, 24, C.gridMain, C.gridSub);
+    (this.grid.material as THREE.Material).opacity = 0.5;
+    (this.grid.material as THREE.Material).transparent = true;
+    this.scene.add(this.grid);
+
+    const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(12, 4, 10));
+    this.roomWire = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: C.roomEdge, opacity: 0.3, transparent: true }));
+    this.roomWire.position.y = 2;
+    this.scene.add(this.roomWire);
+
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0x0e0d0a,
+      roughness: 1.0 - this.settings.reflect * 0.7,
+      metalness: this.settings.reflect * 0.5,
+      emissive: 0x040302,
+      emissiveIntensity: 0.08,
+    });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(12, 10), floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    this.scene.add(floor);
+
+    const table = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8, 0.6, 0.5),
+      new THREE.MeshStandardMaterial({ color: 0x6b5840, roughness: 0.55, emissive: 0x1a1408, emissiveIntensity: 0.25 }),
+    );
+    table.position.set(ROUTER_POS.x, 0.3, ROUTER_POS.z);
+    table.castShadow = true;
+    this.scene.add(table);
+  }
+
+  private buildRouter(): void {
+    const g = new THREE.Group();
+    g.position.copy(ROUTER_POS);
+    g.add(new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, 0.12, 0.35),
+      new THREE.MeshStandardMaterial({ color: 0x505060, roughness: 0.2, metalness: 0.7, emissive: 0x101018, emissiveIntensity: 0.2 }),
+    ));
+    for (let i = -1; i <= 1; i++) {
+      const ant = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.015, 0.015, 0.35),
+        new THREE.MeshStandardMaterial({ color: 0x606068, roughness: 0.3, metalness: 0.6, emissive: 0x101018, emissiveIntensity: 0.15 }),
+      );
+      ant.position.set(i * 0.2, 0.24, 0);
+      ant.rotation.z = i * 0.15;
+      g.add(ant);
+    }
+    this.routerLed = new THREE.Mesh(new THREE.SphereGeometry(0.025), new THREE.MeshBasicMaterial({ color: C.cyan, transparent: true }));
+    this.routerLed.position.set(0.22, 0.07, 0.18);
+    g.add(this.routerLed);
+    this.routerLight = new THREE.PointLight(C.blueSignal, 1.2, 8);
+    this.routerLight.position.set(0, 0.3, 0);
+    g.add(this.routerLight);
+    this.scene.add(g);
+  }
+
+  private buildWaves(): void {
+    for (let i = 0; i < 5; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: C.blueSignal, transparent: true, opacity: 0, side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending, depthWrite: false, wireframe: true,
+      });
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(0.8 + i, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.6), mat);
+      shell.position.copy(ROUTER_POS);
+      shell.position.y += 0.5;
+      this.scene.add(shell);
+      this.waves.push({ mesh: shell, mat, phase: i * 0.7 });
+    }
+  }
+
+  private buildMist(): void {
+    const positions = new Float32Array(this.mistCount * 3);
+    const alphas = new Float32Array(this.mistCount);
+    for (let i = 0; i < this.mistCount; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * 0.5;
+      positions[i * 3] = Math.cos(a) * r;
+      positions[i * 3 + 1] = Math.random() * 1.8;
+      positions[i * 3 + 2] = Math.sin(a) * r;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: `
+        attribute float alpha;
+        varying float vAlpha;
+        void main() {
+          vAlpha = alpha;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = 3.0 * (200.0 / -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor;
+        varying float vAlpha;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          if (d > 0.5) discard;
+          gl_FragColor = vec4(uColor, smoothstep(0.5, 0.2, d) * vAlpha);
+        }`,
+      uniforms: { uColor: { value: new THREE.Color(this.settings.wireColor) } },
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this.mist = new THREE.Points(geo, mat);
+    this.scene.add(this.mist);
+  }
+
+  private buildTrail(): void {
+    const positions = new Float32Array(this.trailCount * 3);
+    const ages = new Float32Array(this.trailCount).fill(1);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('age', new THREE.BufferAttribute(ages, 1));
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: `
+        attribute float age;
+        varying float vAge;
+        void main() {
+          vAge = age;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = max(1.0, (1.0 - age) * 5.0 * (150.0 / -mv.z));
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        uniform vec3 uColor;
+        varying float vAge;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          if (d > 0.5) discard;
+          gl_FragColor = vec4(uColor, (1.0 - vAge) * 0.6 * smoothstep(0.5, 0.1, d));
+        }`,
+      uniforms: { uColor: { value: new THREE.Color(C.cyan) } },
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    this.trail = new THREE.Points(geo, mat);
+    this.scene.add(this.trail);
+  }
+
+  private buildField(): void {
+    const n = 20;
+    const positions = new Float32Array(n * n * 3);
+    this.fieldColors = new Float32Array(n * n * 3);
+    this.fieldSizes = new Float32Array(n * n).fill(8);
+    for (let iz = 0; iz < n; iz++) {
+      for (let ix = 0; ix < n; ix++) {
+        const i = iz * n + ix;
+        positions[i * 3] = (ix - n / 2) * 0.6;
+        positions[i * 3 + 1] = 0.02;
+        positions[i * 3 + 2] = (iz - n / 2) * 0.5;
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(this.fieldColors, 3));
+    geo.setAttribute('size', new THREE.BufferAttribute(this.fieldSizes, 1));
+    this.fieldPoints = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 0.35, vertexColors: true, transparent: true, opacity: this.settings.field,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+    }));
+    this.scene.add(this.fieldPoints);
+  }
+
+  /** "This computer" and the link to the access point — host mode only. */
+  private buildHostLink(): void {
+    const g = new THREE.Group();
+    const desk = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 0.72, 0.7),
+      new THREE.MeshStandardMaterial({ color: 0x3a3226, roughness: 0.6, emissive: 0x0c0a06, emissiveIntensity: 0.3 }),
+    );
+    desk.position.set(COMPUTER_POS.x, 0.36, COMPUTER_POS.z);
+    desk.castShadow = true;
+    g.add(desk);
+
+    const metal = new THREE.MeshStandardMaterial({ color: 0x9a9aa2, roughness: 0.25, metalness: 0.8 });
+    const base = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.02, 0.28), metal);
+    base.position.set(COMPUTER_POS.x, COMPUTER_POS.y + 0.01, COMPUTER_POS.z);
+    g.add(base);
+    this.screenMat = new THREE.MeshStandardMaterial({ color: 0x0a1418, emissive: C.cyan, emissiveIntensity: 0.25, roughness: 0.2 });
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.26, 0.012), this.screenMat);
+    screen.position.set(COMPUTER_POS.x, COMPUTER_POS.y + 0.14, COMPUTER_POS.z - 0.14);
+    screen.rotation.x = -0.25;
+    g.add(screen);
+
+    const from = ROUTER_POS.clone().add(new THREE.Vector3(0, 0.4, 0));
+    const to = COMPUTER_POS.clone().add(new THREE.Vector3(0, 0.2, -0.1));
+    const len = from.distanceTo(to);
+    const mid = from.clone().lerp(to, 0.5);
+    const orient = (m: THREE.Mesh) => {
+      m.position.copy(mid);
+      m.lookAt(to);
+      m.rotateX(Math.PI / 2);
+    };
+
+    this.beamMat = new THREE.MeshBasicMaterial({ color: C.cyan, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, len, 8, 1, true), this.beamMat);
+    orient(beam);
+    g.add(beam);
+
+    this.beamGlowMat = new THREE.MeshBasicMaterial({ color: C.cyan, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.beamGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, len, 12, 1, true), this.beamGlowMat);
+    orient(this.beamGlow);
+    g.add(this.beamGlow);
+
+    this.pulseMat = new THREE.MeshBasicMaterial({ color: C.cyan, transparent: true, opacity: 0, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.pulseRing = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.4, 48), this.pulseMat);
+    this.pulseRing.rotation.x = -Math.PI / 2;
+    this.pulseRing.position.set(COMPUTER_POS.x, 0.03, COMPUTER_POS.z);
+    g.add(this.pulseRing);
+
+    g.visible = false;
+    this.hostGroup = g;
+    this.scene.add(g);
+  }
+
+  // ---- Frame loop --------------------------------------------------------
+
+  private animate(): void {
+    if (this.disposed) return;
+    this.raf = requestAnimationFrame(this.animate);
+    const dt = Math.min(this.clock.getDelta(), 0.1);
+    const elapsed = this.clock.getElapsedTime();
+
+    let data: AnyFrame;
+    if (this.mode === 'sim') data = this.demo.update(dt);
+    else data = this.drawable;
+
+    this.nebula.update(dt, elapsed);
+    this.figures.update(data, elapsed);
+    this.props.update(data, this.mode === 'sim' ? this.demo.currentScenario : null);
+    this.updateMist(data, elapsed);
+    this.updateTrail(data, dt);
+    this.updateWaves(elapsed);
+    this.updateField(data);
+    this.updateHostLink(elapsed);
+
+    (this.routerLed.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * Math.sin(elapsed * 8);
+    this.routerLight.intensity = 0.3 + 0.2 * Math.sin(elapsed * 3);
+
+    if (this.autopilot) {
+      this.autoAngle += dt * this.settings.orbitSpeed;
+      this.camera.position.set(Math.sin(this.autoAngle) * 10, 4.5 + Math.sin(this.autoAngle * 0.5), Math.cos(this.autoAngle) * 10);
+      this.controls.target.set(0, 1.2, 0);
+    }
+    this.controls.update();
+    this.post.update(elapsed);
+    this.post.render();
+    this.updateFps(dt);
+
+    if (elapsed - this.lastTick >= 0.1) {
+      this.lastTick = elapsed;
+      this.onTick({
+        frame: this.mode === 'sim' ? simFrame(data) : this.external,
+        scenario: this.mode === 'sim' ? this.demo.currentScenario : null,
+        autoCycle: !!this.demo._autoMode,
+        paused: !!this.demo.paused,
+        fps: this.fps,
+      });
+    }
+  }
+
+  private updateMist(data: AnyFrame, elapsed: number): void {
+    const persons = data?.persons || [];
+    const present = data?.classification?.presence || false;
+    const pos = this.mist.geometry.attributes.position as THREE.BufferAttribute;
+    const alpha = this.mist.geometry.attributes.alpha as THREE.BufferAttribute;
+    const pa = pos.array as Float32Array;
+    const aa = alpha.array as Float32Array;
+
+    if (!present || persons.length === 0) {
+      for (let i = 0; i < this.mistCount; i++) aa[i] = Math.max(0, aa[i] - 0.02);
+      alpha.needsUpdate = true;
+      return;
+    }
+    const pp = persons[0].position || [0, 0, 0];
+    const px = pp[0] || 0, pz = pp[2] || 0;
+    const ms = persons[0].motion_score || 0;
+    const pose = persons[0].pose || 'standing';
+    const lying = pose === 'lying' || pose === 'fallen';
+    const bodyH = lying ? 0.4 : 1.7;
+    const baseY = lying ? (pp[1] || 0) + 0.05 : 0.05;
+    const spread = ms > 50 ? 0.6 : 0.4;
+    for (let i = 0; i < this.mistCount; i++) {
+      const drift = Math.sin(elapsed * 0.5 + i * 0.1) * 0.003;
+      const angle = (i / this.mistCount) * Math.PI * 2 + elapsed * 0.1;
+      const layerT = (i % 20) / 20;
+      const width = lying ? 0.25 : layerT > 0.75 ? 0.15 : layerT > 0.45 ? 0.25 : 0.18;
+      const r = width * (0.5 + 0.5 * Math.sin(i * 1.7 + elapsed * 0.3)) * spread;
+      pa[i * 3] += (px + Math.cos(angle + i * 0.3) * r + drift - pa[i * 3]) * 0.05;
+      pa[i * 3 + 1] += (baseY + layerT * bodyH - pa[i * 3 + 1]) * 0.05;
+      pa[i * 3 + 2] += (pz + Math.sin(angle + i * 0.5) * r * 0.6 - pa[i * 3 + 2]) * 0.05;
+      aa[i] += (0.15 + Math.sin(elapsed * 2 + i * 0.5) * 0.08 - aa[i]) * 0.08;
+    }
+    pos.needsUpdate = true;
+    alpha.needsUpdate = true;
+  }
+
+  private updateTrail(data: AnyFrame, dt: number): void {
+    const persons = data?.persons || [];
+    const present = data?.classification?.presence || false;
+    const pos = this.trail.geometry.attributes.position as THREE.BufferAttribute;
+    const ages = this.trail.geometry.attributes.age as THREE.BufferAttribute;
+    const pa = pos.array as Float32Array;
+    const ga = ages.array as Float32Array;
+    for (let i = 0; i < this.trailCount; i++) ga[i] = Math.min(1, ga[i] + dt * 0.8);
+    if (present && persons.length > 0) {
+      this.trailTimer += dt;
+      const rate = (persons[0].motion_score || 0) > 50 ? 0.02 : 0.08;
+      if (this.trailTimer >= rate) {
+        this.trailTimer = 0;
+        for (const p of persons) {
+          const pp = p.position || [0, 0, 0];
+          const i = this.trailHead;
+          pa[i * 3] = (pp[0] || 0) + (Math.random() - 0.5) * 0.15;
+          pa[i * 3 + 1] = Math.random() * 1.5 + 0.1;
+          pa[i * 3 + 2] = (pp[2] || 0) + (Math.random() - 0.5) * 0.15;
+          ga[i] = 0;
+          this.trailHead = (this.trailHead + 1) % this.trailCount;
+        }
+      }
+    }
+    pos.needsUpdate = true;
+    ages.needsUpdate = true;
+  }
+
+  private updateWaves(elapsed: number): void {
+    for (const w of this.waves) {
+      const life = ((elapsed * 0.8 + w.phase) % 4.5) / 4.5;
+      w.mat.opacity = Math.max(0, this.settings.waves * 0.25 * (1 - life));
+      const s = 1 + life * 0.6;
+      w.mesh.scale.set(s, s, s);
+      w.mesh.rotation.y = elapsed * 0.05;
+    }
+  }
+
+  private updateField(data: AnyFrame): void {
+    const values: number[] | undefined = data?.signal_field?.values;
+    const colors = this.fieldColors;
+    if (!values) {
+      // No field from this source: fade out rather than leave the last one lit.
+      let any = false;
+      for (let i = 0; i < colors.length; i++) {
+        if (colors[i] > 0.001) {
+          colors[i] *= 0.9;
+          any = true;
+        }
+      }
+      if (any) this.fieldPoints.geometry.attributes.color.needsUpdate = true;
+      return;
+    }
+    const count = Math.min(values.length, 400);
+    for (let i = 0; i < count; i++) {
+      const v = values[i] || 0;
+      let r, g, b;
+      if (v < 0.3) { r = 0; g = v * 1.5; b = v * 0.3; }
+      else if (v < 0.6) { const t = (v - 0.3) / 0.3; r = t * 0.3; g = 0.45 + t * 0.4; b = 0.09 - t * 0.05; }
+      else { const t = (v - 0.6) / 0.4; r = 0.3 + t * 0.7; g = 0.85 - t * 0.2; b = 0.04; }
+      colors[i * 3] = r;
+      colors[i * 3 + 1] = g;
+      colors[i * 3 + 2] = b;
+      this.fieldSizes[i] = 5 + v * 15;
+    }
+    this.fieldPoints.geometry.attributes.color.needsUpdate = true;
+    this.fieldPoints.geometry.attributes.size.needsUpdate = true;
+  }
+
+  private updateHostLink(elapsed: number): void {
+    const show = this.mode === 'host';
+    this.hostGroup.visible = show;
+    if (!show) return;
+    const m = this.external?.motion;
+    const live = !!m && m.level !== 'calibrating';
+    const idx = live ? m!.index : 0;
+    const color = !live || m!.level === 'quiet' ? C.cyan : m!.level === 'motion' ? C.gold : C.amber;
+    this.beamMat.color.setHex(color);
+    this.beamGlowMat.color.setHex(color);
+    this.pulseMat.color.setHex(color);
+    // Brightness and flicker follow the measured disturbance; a dead link is dim.
+    this.beamMat.opacity = this.external ? 0.3 + 0.55 * idx : 0.06;
+    const flicker = 0.6 + 0.4 * Math.sin(elapsed * (6 + idx * 14));
+    this.beamGlowMat.opacity = this.external ? (0.04 + 0.22 * idx) * flicker : 0;
+    const swell = 1 + idx * 0.8 * (0.5 + 0.5 * Math.sin(elapsed * 9));
+    this.beamGlow.scale.set(swell, 1, swell);
+    const ringLife = (elapsed * (0.6 + idx * 1.6)) % 1;
+    this.pulseRing.scale.setScalar(1 + ringLife * (1.5 + idx * 3));
+    this.pulseMat.opacity = live && idx > 0.2 ? (1 - ringLife) * 0.5 * idx : 0;
+    this.screenMat.emissiveIntensity = this.external ? 0.35 : 0.08;
+  }
+
+  private updateFps(dt: number): void {
+    this.fpsFrames++;
+    this.fpsTime += dt;
+    if (this.fpsTime < 1) return;
+    this.fps = Math.round(this.fpsFrames / this.fpsTime);
+    this.fpsFrames = 0;
+    this.fpsTime = 0;
+    let q = this.quality;
+    if (this.fps < 25 && q > 0) q--;
+    else if (this.fps > 55 && q < 2) q++;
+    if (q !== this.quality) {
+      this.quality = q;
+      this.nebula.setQuality(q);
+      this.post.setQuality(q);
+    }
+  }
+
+  private onResize(): void {
+    if (this.disposed) return;
+    const { w, h } = this.size();
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h, false);
+    this.post.resize(w, h);
+  }
+}
+
+/** The demo generator's frame, restated as a SensingFrame the HUD can read. */
+function simFrame(d: AnyFrame): SensingFrame | null {
+  if (!d) return null;
+  const vs = d.vital_signs || {};
+  return {
+    provenance: 'simulated',
+    source: 'simulation',
+    timestamp: d.timestamp,
+    scenario: d.scenario,
+    features: d.features,
+    classification: d.classification,
+    vital_signs: {
+      breathing_rate_bpm: vs.breathing_rate_bpm > 0 ? vs.breathing_rate_bpm : null,
+      heart_rate_bpm: vs.heart_rate_bpm > 0 ? vs.heart_rate_bpm : null,
+    },
+    persons: (d.persons || []).map((p: { id?: number; position?: [number, number, number]; pose?: string }, i: number) => ({
+      id: p.id ?? i,
+      position: p.position || [0, 0, 0],
+      confidence: 1,
+      pose: p.pose,
+    })),
+    estimated_persons: d.estimated_persons,
+  };
+}

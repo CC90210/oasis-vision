@@ -45,6 +45,7 @@ Measured against the running application, not estimated.
 | **Conflict** | Active zones, GDACS events, frontlines | ✅ |
 | **News** | 25+ 24/7 broadcast streams, GDELT | ✅ |
 | **RECON** | 27 modules — email→identity, DNS, WHOIS, certs, IP intel, breach exposure, OFAC sanctions, image forensics, chain forensics | ✅ |
+| **OASIS WIFI** | A second view (top bar): movement sensed from this computer's own WiFi link, live; presence and breathing with ESP32 CSI sensor nodes. See [docs/OASIS-WIFI.md](docs/OASIS-WIFI.md) | ✅ |
 
 **~50 of 69 API routes are live and keyless.** Optional keys raise rate limits; none are needed
 to run.
@@ -142,6 +143,10 @@ the camera layers: Caltrans, Ontario 511, Quebec 511, DriveBC, TfL, ODOT, MDOT, 
 UDOT, LADOTD, ASFINAG, DGT, Fintraffic, THB, HK Transport Department, NZTA and others.
 
 Basemaps © CARTO and OpenFreeMap, © OpenStreetMap contributors. Satellite imagery © Esri.
+
+OASIS WIFI's 3D observatory and simulation scenarios are adapted from
+[RuView](https://github.com/ruvnet/RuView) (MIT, © rUv); the licence ships with the app at
+`public/licenses/ruview-LICENSE.txt`.
 
 <div align="center">
 
