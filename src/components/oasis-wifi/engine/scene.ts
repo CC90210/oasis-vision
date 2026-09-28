@@ -711,6 +711,9 @@ function simFrame(d: AnyFrame): SensingFrame | null {
     vital_signs: {
       breathing_rate_bpm: vs.breathing_rate_bpm > 0 ? vs.breathing_rate_bpm : null,
       heart_rate_bpm: vs.heart_rate_bpm > 0 ? vs.heart_rate_bpm : null,
+      breathing_confidence: vs.breathing_confidence,
+      // The demo generator spells it heart_rate_confidence; RuView's server, heartbeat_confidence.
+      heartbeat_confidence: vs.heartbeat_confidence ?? vs.heart_rate_confidence,
     },
     persons: (d.persons || []).map((p: { id?: number; position?: [number, number, number]; pose?: string }, i: number) => ({
       id: p.id ?? i,

@@ -108,7 +108,8 @@ export function normalizeRuviewMessage(raw: unknown): SensingFrame | null {
           }
         : undefined,
     signal_field: synthesised ? undefined : signalField,
-    persons: synthesised ? [] : persons,
+    // Undefined when the node sent no list, so the panel shows a gap, not "0".
+    persons: !synthesised && Array.isArray(m.persons) ? persons : undefined,
     estimated_persons:
       !synthesised && finite(m.estimated_persons) ? Math.max(0, Math.round(m.estimated_persons)) : undefined,
   };

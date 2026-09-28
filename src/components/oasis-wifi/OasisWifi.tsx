@@ -225,6 +225,9 @@ export default function OasisWifi() {
       } catch (e) {
         if (stopped) return;
         setHostUnreachable(`The OASIS server did not answer (${(e as Error).message}).`);
+        // Clear the readings too, not just the scene: the panels must not keep
+        // showing the last RSSI and verdict under an OFFLINE badge.
+        setHost(null);
         pushFrame(null);
       }
       if (!stopped) timer = setTimeout(poll, 400);
@@ -312,6 +315,9 @@ export default function OasisWifi() {
   // ---- derived view model -------------------------------------------------
   const frame: SensingFrame | null =
     source === 'host' ? (host ? hostFrame(host) : null) : source === 'node' ? nodeFrame : tick?.frame ?? null;
+  // Simulated is a property of the data, not of the button pressed: a node can
+  // be replaying RuView's simulator, and its numbers must be badged the same.
+  const simulated = frame?.provenance === 'simulated';
 
   const badge = useMemo((): { label: string; tone: Tone; note: string } => {
     if (source === 'sim') {
@@ -455,10 +461,13 @@ export default function OasisWifi() {
       </header>
 
       {/* ── SIMULATION BANNER ── */}
-      {source === 'sim' && (
+      {simulated && (
         <div className="absolute top-[118px] md:top-20 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
           <div className="px-4 py-1.5 rounded-full border border-[var(--alert-orange)]/50 bg-black/60 backdrop-blur text-[10px] font-mono font-bold tracking-[0.25em] text-[var(--alert-orange)] whitespace-nowrap">
-            SIMULATION{tick?.scenario ? ` · ${(SCENARIO_LABEL[tick.scenario] ?? tick.scenario).toUpperCase()}` : ''} — NOT A SENSOR READING
+            {source === 'sim'
+              ? `SIMULATION${tick?.scenario ? ` · ${(SCENARIO_LABEL[tick.scenario] ?? tick.scenario).toUpperCase()}` : ''}`
+              : 'SENSOR NODE IS SIMULATING'}{' '}
+            — NOT A SENSOR READING
           </div>
         </div>
       )}
@@ -520,15 +529,11 @@ export default function OasisWifi() {
           <Unmeasured>This node reads a laptop’s RSSI, not CSI, so it cannot measure vital signs.</Unmeasured>
         ) : (
           <>
-            <Vital label="Heart rate" unit="BPM" value={frame?.vital_signs?.heart_rate_bpm ?? null} max={120} sim={source === 'sim'} />
-            <Vital label="Respiration" unit="RPM" value={frame?.vital_signs?.breathing_rate_bpm ?? null} max={30} sim={source === 'sim'} />
-            <Vital
-              label="Confidence"
-              unit="%"
-              value={typeof frame?.classification?.confidence === 'number' ? Math.round(frame.classification.confidence * 100) : null}
-              max={100}
-              sim={source === 'sim'}
-            />
+            {/* Each vital carries its own confidence from the source. The
+                presence classifier's confidence says nothing about a heart
+                rate, so it is shown under Presence instead. */}
+            <Vital label="Heart rate" unit="BPM" value={frame?.vital_signs?.heart_rate_bpm ?? null} confidence={frame?.vital_signs?.heartbeat_confidence} max={120} sim={simulated} />
+            <Vital label="Respiration" unit="RPM" value={frame?.vital_signs?.breathing_rate_bpm ?? null} confidence={frame?.vital_signs?.breathing_confidence} max={30} sim={simulated} />
             {source === 'node' && nodeFrame && !nodeFrame.vital_signs && (
               <p className="mt-1 text-[9px] leading-relaxed text-[var(--text-muted)]">This node sent no vital signs.</p>
             )}
@@ -543,17 +548,17 @@ export default function OasisWifi() {
           <HostSignal host={host} />
         ) : (
           <>
-            <Row label="RSSI" value={fmt(frame?.features?.mean_rssi, 0, ' dBm')} sim={source === 'sim'} />
-            <Row label="Variance" value={fmt(frame?.features?.variance, 2)} sim={source === 'sim'} />
-            <Row label="Motion power" value={fmt(frame?.features?.motion_band_power, 3)} sim={source === 'sim'} />
-            <Row label="Persons" value={personCount(frame)} sim={source === 'sim'} />
+            <Row label="RSSI" value={fmt(frame?.features?.mean_rssi, 0, ' dBm')} sim={simulated} />
+            <Row label="Variance" value={fmt(frame?.features?.variance, 2)} sim={simulated} />
+            <Row label="Motion power" value={fmt(frame?.features?.motion_band_power, 3)} sim={simulated} />
+            <Row label="Persons" value={personCount(frame)} sim={simulated} />
           </>
         )}
         <Sparkline values={sparkValues} />
 
         <div className="mt-3">
           <PanelTitle>{source === 'host' ? 'Motion' : 'Presence'}</PanelTitle>
-          {source === 'host' ? <MotionState host={host} /> : <Presence frame={frame} />}
+          {source === 'host' ? <MotionState host={host} /> : <Presence frame={frame} sim={simulated} />}
         </div>
       </aside>
 
@@ -654,9 +659,10 @@ function Unmeasured({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Vital({ label, unit, value, max, sim }: { label: string; unit: string; value: number | null; max: number; sim: boolean }) {
+function Vital({ label, unit, value, confidence, max, sim }: { label: string; unit: string; value: number | null; confidence?: number; max: number; sim: boolean }) {
   const has = typeof value === 'number' && value > 0;
   const pct = has ? Math.min(100, (value / max) * 100) : 0;
+  const conf = has && typeof confidence === 'number' && Number.isFinite(confidence) ? Math.round(confidence * 100) : null;
   return (
     <div className="mb-2.5">
       <div className="flex items-baseline justify-between">
@@ -668,6 +674,7 @@ function Vital({ label, unit, value, max, sim }: { label: string; unit: string; 
           {has ? Math.round(value) : '—'}
         </span>
         <span className="text-[9px] font-mono text-[var(--text-muted)]">{unit}</span>
+        {conf != null && <span className="ml-auto text-[9px] font-mono tabular-nums text-[var(--text-secondary)]" title="The source's own confidence in this reading">conf {conf}%</span>}
       </div>
       <div className="h-[3px] rounded-full bg-white/5 overflow-hidden">
         <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${pct}%`, background: sim ? 'var(--alert-orange)' : 'var(--cyan-primary)' }} />
@@ -744,12 +751,15 @@ function MotionState({ host }: { host: HostSnapshot | null }) {
   );
 }
 
-function Presence({ frame }: { frame: SensingFrame | null }) {
+function Presence({ frame, sim }: { frame: SensingFrame | null; sim: boolean }) {
   const c = frame?.classification;
-  if (!frame || !c) return <StateChip label="NO DATA" color="var(--text-muted)" />;
+  const noData = <StateChip label="NO DATA" color="var(--text-muted)" />;
+  if (!frame || !c) return noData;
   if (frame.provenance === 'rssi-derived') {
-    // The node's "presence" here is its RSSI motion score renamed. Say motion.
-    const moving = c.motion_level && c.motion_level !== 'absent';
+    // The node's "presence" here is its RSSI motion score renamed. Say motion —
+    // and say nothing when the node sent no motion level at all.
+    if (!c.motion_level) return noData;
+    const moving = c.motion_level !== 'absent';
     return (
       <>
         <StateChip label={moving ? 'MOTION' : 'QUIET'} color={moving ? 'var(--gold-primary)' : 'var(--cyan-primary)'} />
@@ -757,12 +767,18 @@ function Presence({ frame }: { frame: SensingFrame | null }) {
       </>
     );
   }
-  const label = c.motion_level === 'active' ? 'ACTIVE' : c.presence ? 'PRESENT' : 'ABSENT';
-  const color = label === 'ACTIVE' ? 'var(--alert-orange)' : label === 'PRESENT' ? 'var(--alert-green)' : 'var(--text-secondary)';
+  // An omitted field is unknown, not a negative reading: only an explicit
+  // `presence: false` may say ABSENT.
+  const label = c.motion_level === 'active' ? 'ACTIVE' : c.presence === true ? 'PRESENT' : c.presence === false ? 'ABSENT' : null;
+  if (!label) return noData;
+  const color = sim ? 'var(--alert-orange)' : label === 'ACTIVE' ? 'var(--alert-orange)' : label === 'PRESENT' ? 'var(--alert-green)' : 'var(--text-secondary)';
   return (
     <>
-      <StateChip label={label} color={color} />
-      {c.fall_detected && <StateChip label="FALL DETECTED" color="var(--alert-red)" />}
+      <StateChip label={sim ? `${label} · SIM` : label} color={color} />
+      {typeof c.confidence === 'number' && (
+        <Row label="Detection confidence" value={`${Math.round(c.confidence * 100)}%`} sim={sim} title="The node's confidence in its presence classification" />
+      )}
+      {c.fall_detected && <StateChip label={sim ? 'FALL · SIM' : 'FALL DETECTED'} color="var(--alert-red)" />}
       {frame.provenance === 'csi' && (frame.persons?.length ?? 0) > 0 && (
         <p className="mt-1.5 text-[9px] leading-relaxed text-[var(--text-muted)]">Figures stand where the node places people. Their posture is an avatar, not a measured pose.</p>
       )}

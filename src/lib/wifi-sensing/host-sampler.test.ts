@@ -1,3 +1,6 @@
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import type { ChildProcess } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HostWifiSampler, detectPlatform } from './host-sampler';
 import type { ParsedLink } from './netsh';
@@ -124,6 +127,76 @@ describe('HostWifiSampler bookkeeping', () => {
     const s = new HostWifiSampler('unsupported');
     s.touch();
     expect(s.snapshot()).toMatchObject({ status: 'unsupported', error: { code: 'unsupported-platform' } });
+    s.stop();
+  });
+});
+
+/** A stand-in `osascript` whose stdout the test writes to. */
+function fakeOsascript() {
+  const child = new EventEmitter() as EventEmitter & {
+    stdin: PassThrough;
+    stdout: PassThrough;
+    stderr: PassThrough;
+    kill: () => boolean;
+    killed: boolean;
+  };
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.killed = false;
+  child.kill = () => {
+    if (!child.killed) {
+      child.killed = true;
+      setImmediate(() => child.emit('exit', null, 'SIGTERM'));
+    }
+    return true;
+  };
+  return child;
+}
+
+const PROFILER_JSON = JSON.stringify({
+  SPAirPortDataType: [
+    {
+      spairport_airport_interfaces: [
+        { _name: 'en0', spairport_current_network_information: { _name: 'Home', spairport_signal_noise: '-58 dBm / -94 dBm' } },
+      ],
+    },
+  ],
+});
+
+describe('HostWifiSampler on macOS', () => {
+  it('reads CoreWLAN lines from the osascript loop', async () => {
+    const child = fakeOsascript();
+    const s = new HostWifiSampler('macos', async () => PROFILER_JSON, () => child as unknown as ChildProcess);
+    s.touch();
+    child.stdout.write('{"rssi":-61,"noise":-92,"tx":400,"ssid":null,"name":"en0","channel":36,"band":2}\n');
+    await vi.waitFor(() => expect(s.snapshot().latest?.rssiDbm).toBe(-61));
+    expect(s.snapshot().method).toBe('CoreWLAN via osascript');
+    s.stop();
+  });
+
+  it('hands over to system_profiler when CoreWLAN only ever reports failures', async () => {
+    const child = fakeOsascript();
+    const exec = vi.fn(async () => PROFILER_JSON);
+    const s = new HostWifiSampler('macos', exec, () => child as unknown as ChildProcess);
+    s.touch();
+    for (let i = 0; i < 12; i++) child.stdout.write('{"error":"command-failed","detail":"Error: not authorised"}\n');
+    await vi.waitFor(() => expect(s.snapshot().latest?.rssiDbm).toBe(-58));
+    expect(child.killed).toBe(true);
+    expect(exec).toHaveBeenCalledWith('system_profiler', ['SPAirPortDataType', '-json'], expect.any(Number));
+    expect(s.snapshot().method).toBe('system_profiler SPAirPortDataType');
+    s.stop();
+  });
+
+  it('keeps CoreWLAN when it reports a real adapter state, which system_profiler would only repeat', async () => {
+    const child = fakeOsascript();
+    const exec = vi.fn(async () => PROFILER_JSON);
+    const s = new HostWifiSampler('macos', exec, () => child as unknown as ChildProcess);
+    s.touch();
+    for (let i = 0; i < 20; i++) child.stdout.write('{"error":"not-connected","detail":"WiFi is turned off"}\n');
+    await vi.waitFor(() => expect(s.snapshot().error?.code).toBe('not-connected'));
+    expect(child.killed).toBe(false);
+    expect(exec).not.toHaveBeenCalled();
     s.stop();
   });
 });

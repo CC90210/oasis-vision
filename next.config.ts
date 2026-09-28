@@ -21,10 +21,11 @@ const nextConfig: NextConfig = {
       {
         source: '/(.*)',
         headers: [
-          // ws: is for OASIS WIFI sensor nodes: a RuView sensing server on the
-          // LAN (an ESP32 hub, a Pi) speaks plain WebSocket. wss: and https:
-          // to any host were already allowed, so this adds no new reach.
-          { key: 'Content-Security-Policy', value: "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: wss: ws: data: blob:;" },
+          // connect-src adds ws: and http: for OASIS WIFI sensor nodes: a
+          // RuView sensing server on the LAN (an ESP32 hub, a Pi) speaks plain
+          // WebSocket, and mints its auth tickets over plain HTTP. Scoped to
+          // connections only — scripts, frames and images keep default-src.
+          { key: 'Content-Security-Policy', value: "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: wss: data: blob:; connect-src 'self' https: wss: ws: http: data: blob:;" },
           { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },

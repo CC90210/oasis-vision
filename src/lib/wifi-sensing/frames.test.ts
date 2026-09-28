@@ -85,10 +85,18 @@ describe('normalizeRuviewMessage', () => {
     expect(f.provenance).toBe('rssi-derived');
     expect(f.features?.mean_rssi).toBe(-48.2);
     expect(f.classification?.motion_level).toBe('present_still');
-    expect(f.persons).toEqual([]);
+    expect(f.persons).toBeUndefined();
     expect(f.estimated_persons).toBeUndefined();
     expect(f.vital_signs).toBeUndefined();
     expect(f.signal_field).toBeUndefined();
+  });
+
+  it('keeps an omitted person list and presence unknown, not empty or false', () => {
+    const { persons: _p, estimated_persons: _e, ...rest } = ESP32_UPDATE;
+    const f = normalizeRuviewMessage({ ...rest, classification: { motion_level: 'present_still' } })!;
+    expect(f.persons).toBeUndefined();
+    expect(f.estimated_persons).toBeUndefined();
+    expect(f.classification?.presence).toBeUndefined();
   });
 
   it('caps an oversized field instead of trusting its length', () => {

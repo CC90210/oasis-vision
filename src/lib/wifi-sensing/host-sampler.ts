@@ -26,6 +26,8 @@ const FAST_INTERVAL_MS = 250;
 const PROFILER_INTERVAL_MS = 3_000;
 /** A CoreWLAN loop that has printed nothing by now is not going to. */
 const JXA_FIRST_LINE_MS = 8_000;
+/** Consecutive failed CoreWLAN reads (~3 s at 4/s) before handing over to system_profiler. */
+const JXA_MAX_FAILURES = 12;
 /**
  * A "live" reading older than this means the reader died without failing
  * (the slowest path, system_profiler, reads every ~3 s and can take ~3 s).
@@ -57,10 +59,14 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<string> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type CommandRunner = (cmd: string, args: string[], timeoutMs: number) => Promise<string>;
+export type ProcessSpawner = (cmd: string, args: string[]) => ChildProcess;
+
+const spawnPiped: ProcessSpawner = (cmd, args) => spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
 
 export class HostWifiSampler {
   readonly platform: HostPlatform;
   private readonly exec: CommandRunner;
+  private readonly spawnProcess: ProcessSpawner;
   private generation = 0;
   private running = false;
   private status: HostSnapshot['status'];
@@ -74,9 +80,11 @@ export class HostWifiSampler {
   private child: ChildProcess | null = null;
   private watchdog: ReturnType<typeof setInterval> | null = null;
 
-  constructor(platform: HostPlatform = detectPlatform(), exec: CommandRunner = run) {
+  /** `exec` and `spawnProcess` are injectable so the error and fallback paths can be tested off-platform. */
+  constructor(platform: HostPlatform = detectPlatform(), exec: CommandRunner = run, spawnProcess: ProcessSpawner = spawnPiped) {
     this.platform = platform;
     this.exec = exec;
+    this.spawnProcess = spawnProcess;
     this.status = platform === 'unsupported' ? 'unsupported' : 'starting';
   }
 
@@ -210,7 +218,7 @@ export class HostWifiSampler {
     try {
       // The script goes in on stdin: osascript reads its program from there
       // when given neither a file nor -e.
-      child = spawn('osascript', ['-l', 'JavaScript'], { stdio: ['pipe', 'pipe', 'pipe'] });
+      child = this.spawnProcess('osascript', ['-l', 'JavaScript']);
     } catch (e) {
       console.warn(`[wifi-sensing] osascript unavailable (${(e as Error).message}); using system_profiler`);
       void this.loopProfiler(gen);
@@ -219,7 +227,13 @@ export class HostWifiSampler {
     this.child = child;
     child.stdin?.end(coreWlanScript(FAST_INTERVAL_MS));
 
+    // "Working" means the bridge can see the adapter: a reading, or a real
+    // adapter state (no interface, not connected) that system_profiler would
+    // only repeat. A bridge that only reports its own failures is not working,
+    // and must hand over to system_profiler rather than hold the source.
     let gotReading = false;
+    let failuresInARow = 0;
+    let broken = false;
     let buf = '';
     let stderrTail = '';
     const firstLine = setTimeout(() => {
@@ -236,9 +250,21 @@ export class HostWifiSampler {
         if (gen !== this.generation) return;
         const r = parseCoreWlanLine(line);
         if (!r) continue;
-        gotReading = true;
-        if ('link' in r) this.accept(r.link);
-        else this.fail(r.error);
+        if ('link' in r) {
+          gotReading = true;
+          failuresInARow = 0;
+          this.accept(r.link);
+        } else if (r.error.code !== 'command-failed') {
+          gotReading = true;
+          failuresInARow = 0;
+          this.fail(r.error);
+        } else {
+          this.fail(r.error);
+          if (++failuresInARow >= JXA_MAX_FAILURES && !broken) {
+            broken = true;
+            child.kill();
+          }
+        }
       }
     });
     child.stderr?.setEncoding('utf8');
@@ -253,8 +279,9 @@ export class HostWifiSampler {
       clearTimeout(firstLine);
       if (gen !== this.generation) return;
       if (this.child === child) this.child = null;
-      if (!gotReading) {
-        console.warn(`[wifi-sensing] CoreWLAN bridge gave no reading (${why}${stderrTail ? `: ${stderrTail.trim()}` : ''}); using system_profiler`);
+      if (!gotReading || broken) {
+        const reason = broken ? `${JXA_MAX_FAILURES} failed reads in a row` : why;
+        console.warn(`[wifi-sensing] CoreWLAN bridge gave no reading (${reason}${stderrTail ? `: ${stderrTail.trim()}` : ''}); using system_profiler`);
         void this.loopProfiler(gen);
       } else {
         // It worked and then died: restart it rather than drop to the slow path.
