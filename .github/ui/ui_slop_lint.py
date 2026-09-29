@@ -80,7 +80,21 @@ SKIP_FILES = {"ui_slop_lint.py", "test_ui_slop_lint.py"}
 
 # A shadow with no x/y offset and a fat blur is a glow. Elevation has direction.
 RE_HALO = re.compile(r"box-shadow\s*:[^;{}]*?\b0\s+0\s+(\d{2,})px", re.I)
-RE_HALO_NAMED = re.compile(r"\bshadow-ironman\b|\bshadow-glow\b|\bdrop-shadow-glow\b")
+# The same shape as a quoted value, which is how Tailwind configs declare it:
+#   glow: "0 0 24px rgba(59, 130, 246, 0.22)"
+# Catching it at the DEFINITION is what matters. Matching utility NAMES instead
+# was the original shortcut and it backfired: `shadow-glow` was later reworked
+# into a compliant directional shadow, the name deliberately kept because ~10
+# components use it, and the lint then failed a build over a COMMENT that
+# mentioned the name. A guard that fires on the word rather than the behaviour
+# teaches people to rename things instead of fixing them.
+RE_HALO_VALUE = re.compile(r"""["']\s*0\s+0\s+(\d{2,})px""")
+RE_HALO_NAMED = re.compile(r"\bshadow-ironman\b")
+
+# Comment lines describe patterns; they do not ship them. The doctrine files and
+# these very rules discuss halos and orbs constantly, so scanning prose produces
+# false positives that make the gate look broken.
+RE_COMMENT_ONLY = re.compile(r"^\s*(//|/\*|\*|#|<!--)")
 RE_RADIAL = re.compile(r"bg-gradient-radial|radial-gradient\s*\(", re.I)
 RE_GRID = re.compile(r"\bbg-grid(-|\b)|\bbg-dot(-|\b)", re.I)
 RE_NAMED_DECOR = re.compile(r"\bscan-line\b|\btop-glow\b|\bchat-aurora\b")
@@ -108,6 +122,13 @@ def scan_text(rel, text):
     for i, line in enumerate(text.splitlines(), 1):
         if len(line) > 2000:
             line = line[:2000]
+        if RE_COMMENT_ONLY.match(line):
+            continue
+
+        m = RE_HALO_VALUE.search(line)
+        if m and int(m.group(1)) >= 16:
+            hits.append({"file": rel, "line": i, "rule": "halo-shadow",
+                         "severity": "VIOLATION", "snippet": line.strip()[:160]})
 
         for rule, rx in RULES_SIMPLE:
             if rx.search(line):
