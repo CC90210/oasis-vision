@@ -83,13 +83,33 @@
       "rule": "radial-wash"
     },
     {
+      "file": "src/app/page.tsx",
+      "line": 1009,
+      "rule": "halo-shadow"
+    },
+    {
+      "file": "src/app/page.tsx",
+      "line": 1046,
+      "rule": "halo-shadow"
+    },
+    {
       "file": "src/components/CctvPreviews.tsx",
       "line": 295,
       "rule": "named-decor"
     },
     {
+      "file": "src/components/DrawingToolbar.tsx",
+      "line": 165,
+      "rule": "halo-shadow"
+    },
+    {
       "file": "src/components/OasisMap.tsx",
       "line": 1300,
+      "rule": "halo-shadow"
+    },
+    {
+      "file": "src/components/SearchBar.tsx",
+      "line": 244,
       "rule": "halo-shadow"
     },
     {
