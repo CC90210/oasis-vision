@@ -1,0 +1,111 @@
+{
+  "_comment": "Known AI-tell visual patterns. Each entry is a reason a business owner reads our software as generated. Shrink, never grow.",
+  "root": "C:\\Users\\echel\\AppData\\Local\\Temp\\claude\\c--Users-echel-JARVIS\\eacee293-4a60-4b8a-af1b-ae56d1a89a60\\scratchpad\\ov-gate",
+  "known": [
+    {
+      "file": "src/app/globals.css",
+      "line": 293,
+      "rule": "halo-shadow"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 366,
+      "rule": "radial-wash"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 697,
+      "rule": "named-decor"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 714,
+      "rule": "named-decor"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 731,
+      "rule": "named-decor"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 736,
+      "rule": "named-decor"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 908,
+      "rule": "halo-shadow"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 1167,
+      "rule": "halo-shadow"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 1198,
+      "rule": "halo-shadow"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 1298,
+      "rule": "radial-wash"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 1314,
+      "rule": "radial-wash"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 1333,
+      "rule": "named-decor"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 1424,
+      "rule": "radial-wash"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 1426,
+      "rule": "halo-shadow"
+    },
+    {
+      "file": "src/app/globals.css",
+      "line": 1442,
+      "rule": "halo-shadow"
+    },
+    {
+      "file": "src/app/page.tsx",
+      "line": 946,
+      "rule": "radial-wash"
+    },
+    {
+      "file": "src/components/CctvPreviews.tsx",
+      "line": 295,
+      "rule": "named-decor"
+    },
+    {
+      "file": "src/components/OasisMap.tsx",
+      "line": 1300,
+      "rule": "halo-shadow"
+    },
+    {
+      "file": "src/lib/style-tokens.ts",
+      "line": 325,
+      "rule": "radial-wash"
+    },
+    {
+      "file": "src/app/docs/DocsClient.tsx",
+      "line": 134,
+      "rule": "radial-wash"
+    },
+    {
+      "file": "src/app/docs/DocsClient.tsx",
+      "line": 266,
+      "rule": "gradient-text"
+    }
+  ]
+}
