@@ -1,0 +1,48 @@
+name: UI gate
+
+# Blocks the visual patterns that make software read as AI-generated from
+# re-entering this repo.
+#
+# WHY THIS EXISTS
+# ---------------
+# Adon banned this exact set of patterns on 2026-09-17: blurred drifting orbs,
+# a radial-gradient wash, a faint grid, an eyebrow label on every heading, and
+# coloured halo glows. An audit on 2026-09-27 found them still shipping across
+# the estate, including in code written after the ban, because the rule lived
+# in a memory file and a memory file cannot fail a build.
+#
+# HOW IT BEHAVES
+# --------------
+# It keys on structural signals rather than taste. A box-shadow with zero x and
+# y offset and a large blur is a glow, not elevation, because light has a
+# direction. A baseline records what already exists, so this fails on NEW
+# violations only and does not block every commit on day one. Baselines shrink,
+# never grow: if you remove violations, regenerate with --update-baseline and
+# say so in the commit message.
+#
+# PROVENANCE
+# ----------
+# .github/ui/ui_slop_lint.py is vendored byte-identical from JARVIS, which is
+# authoritative. Do not edit the copy here; change it in JARVIS and re-vendor,
+# so the two cannot silently disagree about what counts as a violation.
+# Full doctrine: JARVIS/oasis-ui-library/doctrine/DESIGN_CONSTITUTION.md
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  ai-tell-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Block new AI-tell visual patterns
+        run: >
+          python .github/ui/ui_slop_lint.py
+          --root .
+          --dirs src,app,components,lib,styles,pages
+          --baseline .github/ui/ui-slop-baseline.json

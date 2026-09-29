@@ -155,3 +155,50 @@ launcher/                  desktop app: launchers, icons, installers
   camera is opened.
 - **No Canadian agency publishes continuous video.** Verified against Ontario
   511, DriveBC and Montréal. Quebec's short clips are the national ceiling.
+
+## UI — route through the Oasis UI library BEFORE building (Adon 2026-09-28)
+
+This section exists in this repo, not only in JARVIS, because that was the bug.
+The rule was originally written into `JARVIS/CLAUDE.md` while the UI work happens
+here, and this repo loads its own instructions. A rule that does not load where the
+work happens does not exist.
+
+Before writing or changing any visual surface here:
+
+1. **`Skill(oasis-ui-library)`** — the router. Its `ROUTING.md` is a decision table:
+   per build type (dashboard, data table, chart, form, motion, 3D, redesign, audit,
+   anything touching auth or PII) it names which skills to invoke in what order, what
+   to read, and which gate to run.
+2. **60 installed UI skills** cover primitives, tables and grids, charts, motion,
+   typography and colour, and production open-source products worth studying. Reach
+   for one before searching the web: they carry verified licences and current APIs.
+   TanStack Table's stable release is **v9**, and v8 written from memory does not
+   compile. `react-window` v2 deleted `FixedSizeList`.
+3. **`Skill(hallmark)`** for a new page, a redesign, or a design audit.
+4. **Obey the design constitution** (`JARVIS/oasis-ui-library/doctrine/DESIGN_CONSTITUTION.md`),
+   26 numbered rules with real numbers. Highest impact here:
+   - `font-variant-numeric: tabular-nums` on every price, balance and table numeral
+   - semantic tokens only; dark mode is a token swap, never a parallel component tree
+   - the indigo/violet band is **banned** as a primary accent, the most diagnostic
+     generated-UI tell (it was Tailwind's old default button colour)
+   - WCAG 2.2 AA is the floor: 4.5:1 text, 3:1 large text and UI
+   - a border separates, a shadow elevates; every shadow carries a y-offset
+   - numeric columns right-align, with a right-aligned header
+   - default row height 32-36px; sidebar 220-280px expanded
+5. **Check licensing before adding any dependency or copying any component**
+   (`doctrine/STACK_AND_LICENSING.md`). Several popular kits forbid building a
+   reusable internal library from them. Some repos are AGPL, and some carry no
+   licence at all, which grants no rights rather than meaning free.
+
+**The gate runs in CI** (`.github/workflows/ui-gate.yml`) and fails on NEW AI-tell
+patterns. Run it locally before pushing:
+
+```
+python .github/ui/ui_slop_lint.py --root . --baseline .github/ui/ui-slop-baseline.json
+```
+
+Baselines shrink, never grow. If you remove violations, regenerate with
+`--update-baseline` and say so in the commit message.
+
+**Functionality always outranks the constitution.** A beautiful screen that computes
+the wrong number is a failure.
