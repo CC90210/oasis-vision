@@ -70,3 +70,8 @@ runs/recon-audit.jsonl
 
 # MediaPipe runtime, copied from node_modules by launcher/copy-vendor-assets.js
 /public/mediapipe/wasm/
+
+# Compiled Python. Fifteen sourceless engine/__pycache__/*.pyc files were committed
+# 2026-08-04 with no .py ever in history; removed 2026-10-01. Never commit bytecode.
+__pycache__/
+*.py[cod]
