@@ -1,94 +1,174 @@
 import { NextRequest, NextResponse } from 'next/server';
-import https from 'https';
-import http from 'http';
+import { validateHost } from '@/lib/ssrf-guard';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 15;
 
 /**
  * CCTV image proxy — bypasses CORS / hotlink protection on camera CDNs.
- * Whitelisted domains only to prevent open-proxy abuse.
+ *
+ * The target URL comes from the request, so this route is only as safe as the
+ * checks below. Five defects were closed on 2026-10-01; each has a test in
+ * `route.test.ts` that fires on purpose:
+ *
+ *   1. Redirects are NOT followed blindly. `redirect: 'manual'`, the Location
+ *      re-checked against the same allowlist and the same SSRF guard, one hop
+ *      maximum. The old code followed any 301/302 anywhere, so an allowed
+ *      origin could hand the server a link-local address the allowlist never
+ *      saw.
+ *   2. Exact hostname equality. The old suffix match on
+ *      `s3-eu-west-1.amazonaws.com` admitted every other tenant's bucket on a
+ *      shared host. Nothing proxies S3 any more, so that entry is gone.
+ *   3. TLS verification stays on. Every live host was probed with strict TLS
+ *      on 2026-10-01 and passed.
+ *   4. The body is read under a size cap and aborted mid-stream past it.
+ *   5. Only image responses are relayed. This route answers from our own
+ *      origin with `Access-Control-Allow-Origin: *`, so relaying an upstream's
+ *      HTML would serve it as ours.
+ *
+ * The allowlist is every host a camera list actually hands this route,
+ * measured 2026-10-01: the Skyline CDN (static lists), Spain's DGT feed, and
+ * the eight Taiwan Highway Bureau snapshot servers. Add a host here only when
+ * a camera source starts emitting it.
  */
-const ALLOWED_HOSTS = [
+export const ALLOWED_HOSTS: ReadonlySet<string> = new Set([
   'cdn.skylinewebcams.com',
-  'cdn2.skylinewebcams.com',
-  's3-eu-west-1.amazonaws.com',
-  'voyage.aprr.fr',
-  'thb.gov.tw',
   'etraffic.dgt.es',
-];
+  'cctv-ss01.thb.gov.tw',
+  'cctv-ss02.thb.gov.tw',
+  'cctv-ss03.thb.gov.tw',
+  'cctv-ss04.thb.gov.tw',
+  'cctv-ss05.thb.gov.tw',
+  'cctv-ss06.thb.gov.tw',
+  'cctv-ss07.thb.gov.tw',
+  'cctv-ss08.thb.gov.tw',
+]);
+
+/** Largest live frame measured was ~36 KB; 5 MB leaves room without being unbounded. */
+export const MAX_FRAME_BYTES = 5 * 1024 * 1024;
+
+const TIMEOUT_MS = 12_000;
 
 // Taiwan Highway Bureau cameras are DigiEver encoders, and they emit a
-// malformed response header when the request carries a Referer — Node's parser
-// then rejects the entire response with "Parse Error: Invalid header token".
-// Asking without a Referer returns a clean JPEG. Measured across all eight
-// cctv-ss01…08 servers: 8/8 fail with a Referer, 8/8 succeed without one.
-//
-// This is what the old curl.exe shell-out was working around. That never ran in
-// production at all — curl.exe is a Windows binary name, so on the Linux host
-// every THB request failed, which is why the live map showed "FEED UNAVAILABLE"
-// on Taiwan while it worked on a Windows dev machine.
-//
-// An Accept header is still required: without one these servers hang up.
-const NO_REFERER_HOSTS = ['thb.gov.tw'];
-
-function isAllowed(hostname: string): boolean {
-  return ALLOWED_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
-}
-
+// malformed response header when the request carries a Referer. Asking
+// without a Referer returns a clean JPEG (8/8 servers). An Accept header is
+// still required: without one these servers hang up.
 function sendsReferer(hostname: string): boolean {
-  return !NO_REFERER_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
+  return !hostname.endsWith('.thb.gov.tw');
 }
 
-/** Fetches a camera frame. `referer` is omitted for hosts that choke on it. */
-function proxyFetch(url: string, referer: string | null): Promise<{ status: number; contentType: string; data: Buffer }> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const isHttps = parsed.protocol === 'https:';
-    const mod = isHttps ? https : http;
+/** Injection seam for tests; swapped and restored in `route.test.ts`. */
+export const proxyDeps = {
+  fetch: ((input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init)) as typeof globalThis.fetch,
+  validateHost,
+};
 
-    const headers: Record<string, string> = {
-      'Accept': 'image/*,*/*',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-    };
-    if (referer) headers['Referer'] = referer;
+export function isAllowedTarget(target: URL): boolean {
+  if (target.protocol !== 'https:' && target.protocol !== 'http:') return false;
+  return ALLOWED_HOSTS.has(target.hostname.toLowerCase());
+}
 
-    const options: any = {
-      headers,
-      timeout: 12000,
-    };
+async function gate(target: URL): Promise<string | null> {
+  if (!isAllowedTarget(target)) return `host ${target.hostname} is not on the allowlist`;
+  const check = await proxyDeps.validateHost(target.hostname);
+  if (!check.ok) return `blocked target: ${check.reason}`;
+  return null;
+}
 
-    if (isHttps) {
-      options.rejectUnauthorized = false;
+async function discard(res: Response): Promise<void> {
+  try {
+    await res.body?.cancel();
+  } catch {
+    /* already closed */
+  }
+}
+
+function frameRequest(target: URL): RequestInit {
+  const headers: Record<string, string> = {
+    Accept: 'image/*,*/*',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  };
+  if (sendsReferer(target.hostname.toLowerCase())) headers.Referer = `https://${target.hostname}/`;
+  return { redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS), headers, cache: 'no-store' };
+}
+
+type FetchOutcome = { ok: true; response: Response } | { ok: false; status: number; reason: string };
+
+/** Fetch with the allowlist and SSRF guard re-checked on the one permitted redirect. */
+export async function fetchFrame(target: URL): Promise<FetchOutcome> {
+  const first = await gate(target);
+  if (first) return { ok: false, status: 403, reason: first };
+
+  let res: Response;
+  try {
+    res = await proxyDeps.fetch(target.toString(), frameRequest(target));
+  } catch (e) {
+    return { ok: false, status: 502, reason: e instanceof Error ? e.message : 'upstream unreachable' };
+  }
+  if (res.status < 300 || res.status >= 400) return { ok: true, response: res };
+
+  const location = res.headers.get('location');
+  await discard(res);
+  let next: URL | null = null;
+  try {
+    next = location ? new URL(location, target) : null;
+  } catch {
+    next = null;
+  }
+  if (!next) return { ok: false, status: 502, reason: 'upstream redirect had no usable Location' };
+
+  const hop = await gate(next);
+  if (hop) return { ok: false, status: 403, reason: `refused redirect: ${hop}` };
+
+  let hopRes: Response;
+  try {
+    hopRes = await proxyDeps.fetch(next.toString(), frameRequest(next));
+  } catch (e) {
+    return { ok: false, status: 502, reason: e instanceof Error ? e.message : 'upstream unreachable after redirect' };
+  }
+  if (hopRes.status >= 300 && hopRes.status < 400) {
+    await discard(hopRes);
+    return { ok: false, status: 502, reason: 'upstream redirected twice; one hop is the limit' };
+  }
+  return { ok: true, response: hopRes };
+}
+
+/** Read a body, refusing to exceed `maxBytes` whether or not the upstream declared a length. */
+export async function readCapped(res: Response, maxBytes: number): Promise<Uint8Array<ArrayBuffer> | null> {
+  const declared = Number(res.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await discard(res);
+    return null;
+  }
+  if (!res.body) {
+    const buf = new Uint8Array(await res.arrayBuffer());
+    return buf.byteLength > maxBytes ? null : buf;
+  }
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel('size cap exceeded');
+      return null;
     }
-
-    const req = mod.get(url, options, (res) => {
-      if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
-        proxyFetch(res.headers.location, referer).then(resolve).catch(reject);
-        return;
-      }
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.on('end', () => {
-        resolve({
-          status: res.statusCode || 502,
-          contentType: res.headers['content-type'] || 'image/jpeg',
-          data: Buffer.concat(chunks),
-        });
-      });
-      res.on('error', reject);
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
-  });
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
 }
 
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get('url');
-
-  if (!url) {
-    return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
-  }
+  if (!url) return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
 
   let target: URL;
   try {
@@ -97,31 +177,38 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
   }
 
-  if (!isAllowed(target.hostname.toLowerCase())) {
-    return NextResponse.json({ error: 'Forbidden domain: ' + target.hostname }, { status: 403 });
-  }
-
   try {
-    const host = target.hostname.toLowerCase();
-    const result = await proxyFetch(
-      target.toString(),
-      sendsReferer(host) ? `https://${target.hostname}/` : null
-    );
-
-    if (result.status >= 400) {
-      return NextResponse.json({ error: `Upstream ${result.status}` }, { status: result.status });
+    const outcome = await fetchFrame(target);
+    if (!outcome.ok) {
+      return NextResponse.json({ error: outcome.reason }, { status: outcome.status });
+    }
+    const upstream = outcome.response;
+    if (upstream.status >= 400) {
+      await discard(upstream);
+      return NextResponse.json({ error: `Upstream ${upstream.status}` }, { status: upstream.status });
     }
 
-    return new NextResponse(new Uint8Array(result.data), {
+    const contentType = (upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+    if (!contentType.startsWith('image/') || contentType === 'image/svg+xml') {
+      await discard(upstream);
+      return NextResponse.json({ error: 'Upstream did not return an image' }, { status: 502 });
+    }
+
+    const body = await readCapped(upstream, MAX_FRAME_BYTES);
+    if (!body) return NextResponse.json({ error: 'Upstream frame exceeded the size cap' }, { status: 502 });
+
+    return new NextResponse(body, {
       status: 200,
       headers: {
-        'Content-Type': result.contentType,
+        'Content-Type': contentType,
+        'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'public, max-age=5, stale-while-revalidate=10',
         'Access-Control-Allow-Origin': '*',
       },
     });
-  } catch (error: any) {
-    console.error('Camera proxy error:', error?.message || error);
-    return NextResponse.json({ error: 'Proxy failed: ' + (error?.message || 'unknown') }, { status: 502 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'unknown';
+    console.error('Camera proxy error:', message);
+    return NextResponse.json({ error: 'Proxy failed: ' + message }, { status: 502 });
   }
 }
